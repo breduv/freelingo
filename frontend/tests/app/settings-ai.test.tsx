@@ -27,7 +27,6 @@ const config = {
     temperature: null,
     reasoning_effort: '',
     native_tools: true,
-    verify_lessons: true,
   },
   provider_defaults: Object.fromEntries(
     ['ollama', 'openai', 'anthropic', 'deepseek', 'chatgpt'].map((provider) => [
@@ -42,7 +41,6 @@ const config = {
           temperature: null,
           reasoning_effort: '',
           native_tools: true,
-          verify_lessons: true,
         },
         has_api_key: false,
       },

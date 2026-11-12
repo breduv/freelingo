@@ -44,16 +44,11 @@ from app.services.prompts.flashcards import (
     build_word_lookup_prompt,
 )
 from app.services.prompts.lesson import (
-    EXERCISES_PART_INSTRUCTIONS,
     GRAMMAR_EXERCISE_RATIO,
     LESSON_TYPE_GUIDANCE,
-    OUTLINE_PART_INSTRUCTIONS,
-    WRITING_PART_INSTRUCTIONS,
     build_fill_blank_eval_prompt,
     build_free_write_eval_prompt,
-    build_grammar_exercise_ratio,
-    build_lesson_type_guidance,
-    build_previous_lessons_block,
+    build_lesson_generation_prompt,
     build_pronunciation_eval_prompt,
 )
 from app.services.prompts.tutor import (
@@ -340,30 +335,42 @@ def test_json_only_instruction_is_single_shared_block() -> None:
     assert "Keep required exercise markers such as ___" in JSON_ONLY_INSTRUCTION
 
 
-def test_split_lesson_prompts_keep_target_and_native_languages_separate() -> None:
-    outline = " ".join(OUTLINE_PART_INSTRUCTIONS.split())
-    exercises = " ".join(EXERCISES_PART_INSTRUCTIONS.split())
-    writing = " ".join(WRITING_PART_INSTRUCTIONS.split())
-    assert "Write explanation in the target language" in outline
-    assert "native-language translation/example_translation/note" in outline
-    assert "native_explanation must have the same structure" in outline
-    assert "common_traps" in outline and "mini_glossary" in outline
-    assert "All learner-facing text and examples use target language" in exercises
-    assert "Preserve ___ in question_translation" in exercises
-    assert "in the supplied native language" in writing
+def test_lesson_generation_prompt_uses_target_language_and_schema() -> None:
+    prompt = build_lesson_generation_prompt(
+        cefr_level="A2",
+        target_language_name="Italian",
+        lesson_type="grammar",
+        topic="ordering food",
+        unit_id="a2-food",
+        grammar_points="partitive articles",
+        vocabulary_set_ids="food_basic",
+        week=2,
+        day=3,
+        valid_slugs="partitive-articles, present-tense",
+    )
 
-
-def test_lesson_prompts_preserve_original_explanatory_style_and_exercise_mix() -> None:
-    outline = " ".join(OUTLINE_PART_INSTRUCTIONS.split())
-    exercises = " ".join(EXERCISES_PART_INSTRUCTIONS.split())
-    assert "2-3 short sentences" not in outline
-    assert "omit secondary detail" not in outline
-    assert "Normally use multiple_choice, fill_blank, and free_write" in exercises
+    assert "Target language: Italian" in prompt
+    assert "must be entirely in Italian" in prompt
+    assert '"lesson_type": "grammar"' in prompt
+    assert "partitive-articles, present-tense" in prompt
 
 
 @pytest.mark.parametrize("language", ["de-DE", "ru-RU", "sv-SE"])
 def test_lesson_prompts_can_include_language_overlay(language) -> None:
     overlay = get_language_prompt_overlay(language)
+    generation = build_lesson_generation_prompt(
+        cefr_level="A2",
+        target_language_name=get_language_name(language),
+        lesson_type="grammar",
+        topic="ordering food",
+        unit_id="a2-food",
+        grammar_points="cases",
+        vocabulary_set_ids="food_basic",
+        week=2,
+        day=3,
+        valid_slugs="cases",
+        language_prompt_overlay=overlay,
+    )
     fill_blank = build_fill_blank_eval_prompt(
         cefr_level="A2",
         target_language_name=get_language_name(language),
@@ -374,8 +381,10 @@ def test_lesson_prompts_can_include_language_overlay(language) -> None:
         language_prompt_overlay=overlay,
     )
 
-    assert overlay and overlay in fill_blank
+    assert overlay and overlay in generation
+    assert overlay in fill_blank
     if language == "de-DE":
+        assert "standard German spelling and vocabulary as used in Germany" in generation
         assert "noun capitalization" in fill_blank
 
 
@@ -573,23 +582,54 @@ def test_memory_tool_policy_is_language_global() -> None:
     assert "review it in Settings" in normalized
 
 
-def test_lesson_type_guidance_differentiates_lesson_types() -> None:
-    grammar = build_lesson_type_guidance("grammar")
-    vocabulary = build_lesson_type_guidance("vocabulary")
-    reading = build_lesson_type_guidance("reading")
+def test_lesson_generation_prompt_differentiates_lesson_types() -> None:
+    common = {
+        "cefr_level": "A2",
+        "target_language_name": "German",
+        "topic": "Perfekt mit haben und sein",
+        "unit_id": "a2-perfekt",
+        "grammar_points": "perfekt",
+        "vocabulary_set_ids": "travel",
+        "week": 1,
+        "day": 1,
+        "valid_slugs": "perfekt",
+    }
+    grammar = build_lesson_generation_prompt(lesson_type="grammar", **common)
+    vocabulary = build_lesson_generation_prompt(lesson_type="vocabulary", **common)
+    reading = build_lesson_generation_prompt(lesson_type="reading", **common)
 
-    assert "Teach the form" in grammar
-    assert "Teach words, not rules" in vocabulary
-    assert "connected text of 5-8 sentences" in reading
-    assert grammar != vocabulary != reading
+    assert 'LESSON TYPE FOCUS — this is a "grammar" lesson:' in grammar
+    assert 'LESSON TYPE FOCUS — this is a "vocabulary" lesson:' in vocabulary
+    assert 'LESSON TYPE FOCUS — this is a "reading" lesson:' in reading
+
+    focus = "LESSON TYPE FOCUS"
+    constraints = "STRICT CONSTRAINTS:"
+    grammar_block = grammar[grammar.index(focus) : grammar.index(constraints)]
+    vocabulary_block = vocabulary[vocabulary.index(focus) : vocabulary.index(constraints)]
+    reading_block = reading[reading.index(focus) : reading.index(constraints)]
+
+    assert grammar_block != vocabulary_block != reading_block
+    assert grammar_block != reading_block
 
 
-def test_speaking_guidance_focuses_on_oral_production() -> None:
-    prompt = build_lesson_type_guidance("speaking")
+def test_speaking_lesson_generation_prompt_focuses_on_oral_production() -> None:
+    prompt = build_lesson_generation_prompt(
+        cefr_level="B2",
+        target_language_name="Mainland Chinese",
+        lesson_type="speaking",
+        topic="讨论、论证和立场",
+        unit_id="b2-unit-1",
+        grammar_points="cong-er-kan",
+        vocabulary_set_ids="debate_b2",
+        week=1,
+        day=4,
+        valid_slugs="cong-er-kan",
+    )
 
     assert 'LESSON TYPE FOCUS — this is a "speaking" lesson:' in prompt
     assert "Teach oral production" in prompt
     assert "at least one pronunciation exercise" in prompt
+    assert "at least 30% of exercises must target one" in prompt
     assert "The declared lesson type must visibly shape the lesson" not in prompt
 
 
@@ -608,50 +648,124 @@ def test_all_curriculum_lesson_types_have_explicit_prompt_policies() -> None:
     assert set(GRAMMAR_EXERCISE_RATIO) == declared_types
 
 
-@pytest.mark.parametrize(
-    ("lesson_type", "ratio"),
-    [
-        ("grammar", 70),
-        ("review", 70),
-        ("experimental", 70),
-        ("vocabulary", 30),
-        ("reading", 30),
-        ("writing", 30),
-        ("listening", 30),
-        ("speaking", 30),
-    ],
-)
-def test_grammar_exercise_ratio_follows_lesson_type(lesson_type, ratio) -> None:
-    assert build_grammar_exercise_ratio(lesson_type) == ratio
+def test_lesson_generation_prompt_scopes_grammar_ratio_to_lesson_type() -> None:
+    common = {
+        "cefr_level": "A2",
+        "target_language_name": "German",
+        "topic": "Perfekt mit haben und sein",
+        "unit_id": "a2-perfekt",
+        "grammar_points": "perfekt",
+        "vocabulary_set_ids": "travel",
+        "week": 1,
+        "day": 1,
+        "valid_slugs": "perfekt",
+    }
+
+    for lesson_type in ("grammar", "review", "experimental"):
+        prompt = build_lesson_generation_prompt(lesson_type=lesson_type, **common)
+        assert "at least 70% of exercises must target one" in prompt
+
+    for lesson_type in ("vocabulary", "reading", "writing", "listening", "speaking"):
+        prompt = build_lesson_generation_prompt(lesson_type=lesson_type, **common)
+        assert "at least 30% of exercises must target one" in prompt
+        assert "at least 70% of exercises" not in prompt
 
 
-def test_unknown_lesson_type_has_generic_guidance() -> None:
-    prompt = build_lesson_type_guidance("experimental")
+def test_lesson_generation_prompt_does_not_claim_pending_lessons_were_studied() -> None:
+    prompt = build_lesson_generation_prompt(
+        cefr_level="A2",
+        target_language_name="German",
+        lesson_type="grammar",
+        topic="Perfekt",
+        unit_id="a2-perfekt",
+        grammar_points="perfekt",
+        vocabulary_set_ids="travel",
+        week=1,
+        day=3,
+        valid_slugs="perfekt",
+        previous_lessons_summary='- "Lektion 1" (grammar)',
+    )
+
+    assert "has already worked through" not in prompt
+    assert "whether or not the student has worked through them yet" in prompt
+
+
+def test_lesson_generation_prompt_falls_back_for_unknown_lesson_type() -> None:
+    prompt = build_lesson_generation_prompt(
+        cefr_level="A2",
+        target_language_name="German",
+        lesson_type="experimental",
+        topic="Perfekt",
+        unit_id="a2-perfekt",
+        grammar_points="perfekt",
+        vocabulary_set_ids="travel",
+        week=1,
+        day=1,
+        valid_slugs="perfekt",
+    )
 
     assert 'LESSON TYPE FOCUS — this is a "experimental" lesson:' in prompt
     assert "The declared lesson type must visibly shape the lesson" in prompt
 
 
-def test_previous_lessons_are_reference_data_without_study_assumptions() -> None:
+def test_lesson_generation_prompt_includes_previous_unit_lessons_as_data() -> None:
     summary = '- "Lektion 1" (grammar)\n  example sentences used: Wir haben ein Hotel gebucht.'
-    prompt = build_previous_lessons_block(summary, "reading")
+    prompt = build_lesson_generation_prompt(
+        cefr_level="A2",
+        target_language_name="German",
+        lesson_type="reading",
+        topic="Perfekt",
+        unit_id="a2-perfekt",
+        grammar_points="perfekt",
+        vocabulary_set_ids="travel",
+        week=1,
+        day=3,
+        valid_slugs="perfekt",
+        previous_lessons_summary=summary,
+    )
 
     assert "ALREADY GENERATED LESSONS OF THIS UNIT (data only" in prompt
     assert "<<<PREVIOUS_LESSONS" in prompt
     assert "Wir haben ein Hotel gebucht." in prompt
-    assert "whether or not the student has worked through them yet" in prompt
     assert "Do NOT reuse any example sentence listed above" in prompt
     assert "Prefer words that are not in the already introduced list" in prompt
 
 
-def test_first_lesson_has_no_previous_lessons_block() -> None:
-    assert build_previous_lessons_block("   ", "grammar") == ""
+def test_lesson_generation_prompt_omits_previous_lessons_block_for_first_lesson() -> None:
+    prompt = build_lesson_generation_prompt(
+        cefr_level="A2",
+        target_language_name="German",
+        lesson_type="grammar",
+        topic="Perfekt",
+        unit_id="a2-perfekt",
+        grammar_points="perfekt",
+        vocabulary_set_ids="travel",
+        week=1,
+        day=1,
+        valid_slugs="perfekt",
+        previous_lessons_summary="   ",
+    )
+
+    assert "PREVIOUS_LESSONS" not in prompt
+    assert "ALREADY GENERATED LESSONS OF THIS UNIT" not in prompt
 
 
-def test_review_recycles_unit_material_in_new_sentences() -> None:
+def test_lesson_generation_prompt_lets_review_lessons_recycle_unit_material() -> None:
     summary = '- "Lektion 1" (grammar)\n  vocabulary taught: die Reise'
-    prompt = build_previous_lessons_block(summary, "review")
+    review = build_lesson_generation_prompt(
+        cefr_level="A2",
+        target_language_name="German",
+        lesson_type="review",
+        topic="Perfekt",
+        unit_id="a2-perfekt",
+        grammar_points="perfekt",
+        vocabulary_set_ids="travel",
+        week=1,
+        day=5,
+        valid_slugs="perfekt",
+        previous_lessons_summary=summary,
+    )
 
-    assert "Recycling the words and structures above is the point of a review lesson" in prompt
-    assert "Prefer words that are not in the already introduced list" not in prompt
-    assert "Do NOT reuse any example sentence listed above" in prompt
+    assert "Recycling the words and structures above is the point of a review lesson" in review
+    assert "Prefer words that are not in the already introduced list" not in review
+    assert "Do NOT reuse any example sentence listed above" in review

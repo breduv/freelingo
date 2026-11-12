@@ -21,7 +21,6 @@ interface Options {
   temperature: number | null
   reasoning_effort: string
   native_tools: boolean
-  verify_lessons: boolean
 }
 
 interface Configuration {
@@ -143,7 +142,6 @@ function AiSettings() {
     setOptions((previous) => ({
       ...defaults.options,
       timeout_seconds: previous?.timeout_seconds ?? defaults.options.timeout_seconds,
-      verify_lessons: previous?.verify_lessons ?? defaults.options.verify_lessons,
     }))
     setModels([])
     setApiKey('')
@@ -336,19 +334,6 @@ function AiSettings() {
                 >
                   {t('loadModels')}
                 </button>
-              </div>
-            </SettingsPanel>
-            <SettingsPanel title={t('quality')}>
-              <div className="border-fl-border bg-fl-surface space-y-3 border p-5">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={options.verify_lessons}
-                    onChange={(event) => change('verify_lessons', event.target.checked)}
-                  />
-                  {t('verifyLessons')}
-                </label>
-                <p className="text-fl-muted-2 text-sm">{t('reviewHelp')}</p>
               </div>
             </SettingsPanel>
             <details className="border-fl-border bg-fl-surface space-y-4 border p-5">

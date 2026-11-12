@@ -24,7 +24,7 @@
 FreeLingo is an open-source language learning platform with a structured A1–C2 curriculum and an AI
 tutor, **Lingu**. Use the managed service or run the application on your own infrastructure.
 
-This fork of [artcc/freelingo](https://github.com/artcc/freelingo) adds browser AI settings, local ChatGPT sign-in and shorter, reviewed lesson generation.
+This fork of [artcc/freelingo](https://github.com/artcc/freelingo) adds browser AI settings and local ChatGPT sign-in.
 The hosted service below is the upstream team's separate installation.
 
 1. **Find your starting point.** Take the adaptive placement quiz or start at A1 as a beginner.
@@ -211,7 +211,7 @@ disable this behavior.
 5. Access the app at `http://<server-ip>:3000`. Database migrations run automatically when the backend starts.
 
 This unmodified-Compose path uses the original upstream images and does not include the local patches.
-Use Option A for the AI panel, ChatGPT and lesson changes. Remote Portainer deployment does not
+Use Option A for the AI panel and ChatGPT. Remote Portainer deployment does not
 provide the local browser callback for ChatGPT automatically.
 
 > **Ollama on the same host:** use `OLLAMA_BASE_URL=http://host.docker.internal:11434`.
@@ -234,7 +234,7 @@ provide the local browser callback for ChatGPT automatically.
   (Kokoro / faster-whisper) or `openai`. See [speech setup](#configuring-tts--stt).
 
 <details>
-<summary><strong>Provider and lesson settings</strong></summary>
+<summary><strong>Provider settings</strong></summary>
 
 - OpenAI LLM requests use the **Responses API**, with `OPENAI_MODEL=gpt-6-luna` in `.env.example`.
   The selected model and endpoint must support Responses; a Chat Completions-only gateway is
@@ -246,11 +246,8 @@ provide the local browser callback for ChatGPT automatically.
 - `ANTHROPIC_MAX_TOKENS` defaults to `8192` and must fit the selected model's output limit.
 - Select a provider and its model/key in the panel. Only Ollama exposes a configurable host address.
   Timeout, output limit, temperature, reasoning and tools are handled by the selected provider's adapter.
-- Lessons always generate explanation/vocabulary and exercises separately, with bounded text,
-  key points and examples. Native help remains collapsible. Writing tasks have separate criteria.
-- Semantic review is enabled by default. A separate request to the same model checks choices
-  without seeing the answer key; ambiguous content is repaired or rejected before saving. It adds
-  requests and latency and cannot guarantee correctness. Existing lessons are not rewritten.
+- AI prompts, lesson generation and lesson schemas follow the pinned upstream source. A lesson's
+  explanation, vocabulary and exercises are generated together; no fork-specific review is added.
 - Back up encrypted AI settings together with `SECRET_KEY`. Losing/changing the secret prevents
   decryption. ChatGPT authorization targets an exact HTTP loopback callback on `127.0.0.1`;
   see the [official sign-in contract](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).

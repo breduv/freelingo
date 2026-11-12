@@ -160,12 +160,6 @@ error alone does not trigger native help. The same policy covers lesson practice
 target-language overlays apply only to target-language passages. The prompt policy is not a guarantee
 that target-language STT will correctly recognize a request spoken in another language.
 
-An answer in another language is not accepted as evidence of target-language production. Lingu
-offers a brief cue or sentence starter and asks the learner to try the same answer in the target
-language before advancing. When a full model is needed, the learner is asked to say it themselves.
-Proper names, borrowed words, accents and ordinary grammar mistakes do not require blanket rejection.
-This is prompt guidance, not a deterministic gate on transcript language or conversation rewards.
-
 A normal turn:
 
 1. Assigns a turn ID and emits `transcribing`.

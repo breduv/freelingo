@@ -18,19 +18,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 - The AI panel selects the original Ollama, OpenAI, Anthropic and DeepSeek integrations or ChatGPT.
   Original provider-specific environment fields, protocols, native tools and streams are retained.
-- Lessons generate explanation/vocabulary and exercises separately, with bounded explanations,
-  dedicated writing criteria, and one configuration snapshot across the entire operation. Prompts
-  separate introductory context, rules and applied examples to avoid repeating the explanation.
-- Lesson exercises progressively practise the main taught skills and request a final integrated
-  task where appropriate. Writing refinement retains the complete lesson and preceding exercises;
-  full-lesson review checks for main skills omitted from practice.
-- Blind semantic review checks every choice before new lessons or replacement exercises are saved;
-  ambiguous candidates are regenerated or rejected. Duplicate options are rejected structurally.
-- Lingu asks learners to retry answers given in another language before moving on. Speech
-  recognition retains the original explicit study-language configuration and Whisper settings.
-- Tutor, assessment and resource-help prompts distinguish actual target-language production from
-  translated answers, avoid repetitive support blocks, preserve vocabulary capitalization and
-  contextual meanings, and describe STT-based scoring without claiming acoustic measurements.
 
 ## [1.12.10] - 2026-11-11
 

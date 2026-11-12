@@ -40,10 +40,6 @@ class ExerciseContent(BaseModel):
                 raise ValueError("fill_blank exercises must include ___ in the question")
         if not valid_question_translation(self.question, self.question_translation):
             self.question_translation = None
-        if self.type in ("multiple_choice", "listening"):
-            normalized = [" ".join(option.split()).casefold() for option in self.options or []]
-            if len(set(normalized)) != len(normalized):
-                raise ValueError("answer options must be distinct, ignoring case and whitespace")
         if self.type != "multiple_choice":
             return self
         options = [option for option in (self.options or []) if option.strip()]

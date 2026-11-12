@@ -55,13 +55,12 @@ Retry, streaming-failure, and provider-output behavior is defined in
 
 Only the five declared providers are accepted. Cloud-provider endpoints are fixed; Ollama exposes
 its server address. Operator options control timeout, output limit, temperature, OpenAI/ChatGPT
-reasoning, tools and semantic review. Saved LLM keys do not change speech credentials.
+reasoning and tools. Saved LLM keys do not change speech credentials.
 
 `llm_config.py` owns validated `LLMOptions`. Saved administrator options take precedence over
 initial environment values. New chat/structured operations create independent adapter snapshots;
-clients close when the request or returned stream finishes. `llm_operation()` pins the same options
-across all generation, correction and review steps of a lesson or replacement exercise. Concurrent
-saves affect later operations. No failure silently switches endpoints or billing paths.
+clients close when the request or returned stream finishes. Concurrent saves affect later operations.
+No failure silently switches endpoints or billing paths.
 
 `LLM_CONFIG_PATH` defaults to `/data/llm/settings.json`. The encrypted file stores options, stable
 host identity and ChatGPT credentials outside PostgreSQL. Fernet uses a key derived from `SECRET_KEY`;
@@ -131,8 +130,7 @@ LLM calls. The eligibility contract lives in `study-plan.instructions.md`.
 `lesson_generator.py` uses the LLM within curriculum, CEFR, target-language, and native-language
 constraints. It:
 
-- generates bounded explanation/vocabulary, then exercises and writing tasks separately through
-  `lesson_quality.py`; optional blind review rejects ambiguous content before persistence;
+- generates the complete lesson through one structured-output operation using the upstream prompt;
 - includes optional native-language question translations in generated/replacement exercises;
 - varies instructions by declared lesson type;
 - summarizes bounded prior-unit content to reduce repetition;

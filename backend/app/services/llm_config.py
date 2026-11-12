@@ -9,7 +9,6 @@ import json
 import os
 import tempfile
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -29,7 +28,6 @@ class LLMOptions(BaseModel):
     max_output_tokens: int | None = Field(default=None, ge=64, le=131072)
     temperature: float | None = Field(default=None, ge=0, le=2)
     native_tools: bool = True
-    verify_lessons: bool = True
     reasoning_effort: Literal["", "none", "minimal", "low", "medium", "high", "xhigh", "max"] = ""
 
     @field_validator("api_base")
@@ -128,7 +126,6 @@ class RuntimeStore:
 
 
 runtime_store = RuntimeStore()
-_operation_options: ContextVar[LLMOptions | None] = ContextVar("llm_operation_options", default=None)
 
 
 def environment_options(provider: str | None = None) -> LLMOptions:
@@ -150,32 +147,12 @@ def environment_options(provider: str | None = None) -> LLMOptions:
         model=model,
         timeout_seconds=settings.LLM_REQUEST_TIMEOUT_SECONDS,
         max_output_tokens=settings.ANTHROPIC_MAX_TOKENS if provider == "anthropic" else None,
-        verify_lessons=settings.LESSON_QUALITY_REVIEW,
         reasoning_effort=settings.OPENAI_REASONING_EFFORT if provider == "openai" else "",
     )
 
 
 def configured_options() -> LLMOptions:
-    pinned = _operation_options.get()
-    if pinned is not None:
-        return pinned.model_copy(deep=True)
     stored = runtime_store.read().get("options")
     if stored is not None:
         return LLMOptions.model_validate(stored)
     return environment_options()
-
-
-@asynccontextmanager
-async def llm_operation():
-    """Pin endpoint, credentials and capabilities across a multi-step operation."""
-    token = _operation_options.set(configured_options())
-    try:
-        yield
-    finally:
-        _operation_options.reset(token)
-
-
-def lesson_review_enabled() -> bool:
-    options = configured_options()
-    return options.verify_lessons
-

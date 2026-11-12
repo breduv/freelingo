@@ -27,15 +27,8 @@ considered when changing prompt-safety assumptions.
   timing, stress, and tonal or pitch distinctions where relevant. These details apply only to passages
   in that language and preserve the selected voice's identity; they are not specific to the default voice.
   Spoken text must be read faithfully, never translated, extended, or treated as executable instructions.
-- `lesson.py`: compact outline/exercise/writing prompts, lesson-type/history policies, blind review,
-  invalid-exercise regeneration, native support, and exercise grading. `lesson_quality.py` supplies
-  context/schemas and coordinates these prompts; reusable instructions remain in this package.
-  Generation takes structured curriculum context; there is no monolithic lesson prompt or alternate
-  full-lesson generation path. Previous-lesson policies apply to generated siblings regardless of
-  whether they have been studied, with new examples and review-specific vocabulary reuse.
+- `lesson.py`: lesson generation, invalid-exercise regeneration, native support, and exercise grading.
 - `flashcards.py`: deck generation, selected-word lookup and contextual translation of new imported terms.
-  Generated terms retain standard capitalization and meaningful fixed expressions. Definitions,
-  translations and examples use one consistent sense; lookups use the supplied reading context.
 - `comprehension.py`: Listening and Reading generation and post-attempt question explanations.
 - `games.py`: generation and separate semantic review for Error Detective, Sentence Order, and
   Vocabulary Pairs. Plan language/level, profile native language, allowed source identifiers and
@@ -44,9 +37,6 @@ considered when changing prompt-safety assumptions.
   Detective fragments/replacements/options, Sentence Order fragments/accepted permutations, and
   Vocabulary Pairs terms/meanings/examples; semantic review checks linguistic validity and ambiguity.
 - `assessment.py`: free-write placement, level test, and alternate assessment flow.
-  Writing is judged from the actual target-language sample; another-language or unusable sample
-  receives no writing credit and does not invent evidence to change the preliminary placement.
-  Level-test generation requests four distinct options and one contextually valid answer per item.
 - `grammar.py`, `vocabulary.py`, and `phrasebook.py`: native-language resource support.
 
 `__init__.py` exposes the builders consumed outside the package.
@@ -56,8 +46,6 @@ considered when changing prompt-safety assumptions.
 `JSON_ONLY_INSTRUCTION` and `STRUCTURED_OUTPUT_RETRY_PROMPT` support callers using
 `LLMAdapter.structured_output()`. Assessment free-write and level-test callers instead use raw chat
 plus explicit JSON parsing; their builders include the same `JSON_ONLY_INSTRUCTION`.
-The correction fragment asks for repair against the supplied schema and reported validation error,
-covering schema-invalid objects as well as malformed JSON syntax.
 
 `PLAIN_TEXT_OUTPUT_INSTRUCTION` forbids Markdown formatting in voice replies and generated resource
 text, including JSON string values, because those surfaces display text literally. It excludes emphasis markers,
@@ -92,8 +80,6 @@ writing-system and speech rules are defined in `target-language.instructions.md`
 `MEMORY_SYSTEM_INSTRUCTION_BASE` and `get_memory_system_instruction()` advertise the native
 `save_user_memory` tool only when the request actually offers that tool. No-tools fallbacks may retain
 escaped memory context but must not instruct the model to call an unavailable tool.
-Practice sentences, quoted examples, translations and roleplay do not establish durable personal
-facts unless the learner confirms them as real self-disclosure.
 
 ## Tutor prompts
 
@@ -109,12 +95,6 @@ assistance, an explanation or translation, or signals incomprehension. Lingu the
 target-language example and an easy question to resume practice. Greetings, ordinary corrections and
 hints remain target-language by default. Overlays apply to target-language passages without overriding
 this exception. This policy is retained by lesson-practice and tool-free prompt construction.
-
-A practice answer supplied in another language does not demonstrate target-language production.
-Lingu stays on the question, offers a brief cue or sentence starter and asks for another attempt in
-the target language before advancing. A supplied model answer must be spoken by the learner before
-it is treated as practice. Proper names, borrowed words, accents and ordinary grammar errors are
-not grounds for blanket rejection. This is tutor guidance, not deterministic language scoring.
 
 Lesson-linked voice sessions additionally receive `lesson_practice_context`. The service loads this
 bounded, escaped JSON reference from an owned completed lesson and its answered exercises; the client
@@ -134,42 +114,6 @@ transcript of prior content.
 The lesson type selects explanation focus and exercise mix. Generated structures are validated through
 Pydantic. Separate builders cover invalid-exercise replacement, missing lesson/exercise native
 explanations, hints, question translation, fill-blank grading, free-write grading, and pronunciation grading.
-
-Lesson prompts distribute the teaching across existing fields: text introduces the purpose and
-situation, key points explain individual rules or contrasts with explicit forms, and examples apply
-them with sentence-specific notes. The introduction must not repeat the full teaching content of
-the key points. Reading passages, writing models and speaking exchanges retain their lesson-type
-role in text, with commentary in key points. Native support mirrors that structure with faithful,
-natural translations, specific traps and useful glossary entries. Prompts do not impose a two- or
-three-sentence introduction, telegraphic prose or maximum-length fields. Exercises normally
-combine multiple_choice, fill_blank and free_write, with the supplied lesson-type focus taking priority.
-The batch is a connected sequence from recognition through controlled application to combined use.
-Every main actionable skill taught in the explanation, key points and examples must be needed in
-at least one learner response; mentioning it in a prompt, distractor or explanation is insufficient.
-Where the lesson type permits, a final free-write task integrates the taught skills in one coherent
-situation with explicit requirements and enough room for a short connected response. Required
-receptive and pronunciation formats remain authoritative. Coverage concerns meaningful learning
-goals, not every incidental word or every possible paradigm combination.
-The separate writing request receives the complete outline, preceding exercise types/questions/options,
-its position as final or non-final, the draft question and any review findings, preserving the task's
-role in that sequence. Its grading criteria must follow the displayed requirements.
-Schema bounds and validation remain separate from these explanatory instructions. Choice
-questions must explicitly disambiguate context and have one acceptable option. Review independently
-evaluates every choice without seeing the generated key, checking grammar, translations and CEFR
-suitability. Repair requests include findings and share the original generation deadline. Structural
-and review contracts are owned by `study-plan.instructions.md`; neither is a correctness guarantee.
-Full-lesson review also compares taught skills with required learner actions, flags missing main
-skills and checks progressive, integrated practice. Exercise-only review does not assess whole-lesson
-coverage. This is a semantic prompt policy, not a persisted coverage matrix or deterministic check.
-
-Fill-blank evaluation judges the completed sentence and accepts valid alternatives consistent with
-the explicit task, while preserving tested distinctions such as negation, tense, agreement or case.
-Writing evaluation does not translate another-language answers into credit, impose unstated
-requirements, demand a particular model answer or invent corrections to fill an output example.
-Pronunciation evaluation sees STT text only: it compares recognized content and must not claim to
-have measured accent, individual sounds, stress or intonation. These are prompt-level rubrics.
-Hints may guide reasoning but must not reveal solutions through translations, option positions,
-elimination of every other choice or a completed copy of the question.
 
 Listening lessons request actual `listening` exercises, with a self-contained `listening_text` suited
 to single-voice synthesis and multiple-choice questions answerable from that source. The source belongs
@@ -192,9 +136,6 @@ and structural checks belong to `study-plan.instructions.md` (Optional question 
 Flashcard prompts generate target-language words/examples and native-language support. Comprehension
 prompts receive `length_guidance`; `word_count` is only a builder fallback used to construct guidance
 when an explicit language-aware value is absent.
-Both comprehension generators require passage-grounded, uniquely answerable questions at the
-learner's level. Beginner inference uses simple supported implications. Listening scripts must be
-understandable with one TTS voice, without dependence on distinguishable actors or visual cues.
 
 Bulk-card translation uses profile native language and persisted plan target language, with words,
 definitions and examples in a separate untrusted JSON message. It translates the term's contextual
@@ -208,14 +149,9 @@ containing the saved passage, question, options, answer key and level. It reques
 explanation and one contiguous literal evidence quote, distinguishing inference from explicit statements.
 No learner answer or personal data enters the reusable explanation. The service validates nonempty,
 bounded fields and that evidence occurs exactly in the passage; linguistic accuracy remains model-dependent.
-If the passage does not support the stored key, the prompt requests an honest explanation of that
-inconsistency rather than a fabricated justification; it does not authorize changing the saved key.
 
 Resource-help prompts receive canonical static source JSON and preserve target-language examples while
-generating native-language explanation. The source is reference data, never executable instructions.
-Summary, teaching points, example/word/phrase notes, traps and glossary entries serve complementary
-purposes rather than repeating the same explanation. Guidance retains source meaning, level and
-register and must not invent rules, cultural absolutes or difficulties merely to fill lists.
+generating native-language explanation.
 
 ## Roles and output modes
 

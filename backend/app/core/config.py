@@ -30,8 +30,6 @@ class Settings(BaseSettings):
     CHATGPT_MODEL: str = "gpt-6-luna"
     LLM_REQUEST_TIMEOUT_SECONDS: float = Field(default=120, ge=5, le=1800)
     LLM_CONFIG_PATH: str = "/data/llm/settings.json"
-    LESSON_QUALITY_REVIEW: bool = True
-    LESSON_QUALITY_MAX_ATTEMPTS: int = Field(default=2, ge=1, le=3)
     CHATGPT_REDIRECT_URI: str = "http://127.0.0.1:3000/auth/callback"
     TTS_PROVIDER: str = "local"  # local | openai
     TTS_BASE_URL: str = "http://kokoro:8880"

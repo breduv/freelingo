@@ -20,9 +20,9 @@ from app.schemas.lessons import (
     NativeExerciseExplanationResponse,
     NativeExerciseHintResponse,
 )
-from app.services.lesson_generator import regenerate_exercise
-from app.services.llm_adapter import LLMResponseError
-from app.services.prompts.lesson import EXERCISES_PART_INSTRUCTIONS, build_lesson_type_guidance
+from app.services.lesson_generator import generate_lesson, regenerate_exercise
+from app.services.llm_adapter import LLMResponseError, llm_adapter
+from app.services.prompts.lesson import build_lesson_generation_prompt
 from tests.conftest import make_study_plan
 
 
@@ -91,43 +91,70 @@ def test_listening_lesson_requires_an_actual_listening_exercise():
 
 
 def test_listening_generation_prompt_requires_playable_isolated_sources():
-    prompt = " ".join(
-        (build_lesson_type_guidance("listening") + EXERCISES_PART_INSTRUCTIONS).split()
+    prompt = build_lesson_generation_prompt(
+        cefr_level="A1",
+        target_language_name="British English",
+        lesson_type="listening",
+        topic="At the library",
+        unit_id="a1-unit-1",
+        grammar_points="present-simple",
+        vocabulary_set_ids="places",
+        week=1,
+        day=1,
+        valid_slugs="present-simple",
     )
+    assert '"type": "listening"' in prompt
     assert "at least one listening exercise" in prompt
+    assert "at most 5000 characters" in prompt
     assert "single-voice TTS" in prompt
-    assert "Keep the transcript only in listening_text" in prompt
-    assert "never in the lesson explanation, question, translation, or hint" in prompt
-    assert "separate short phrase after the listening exercise" in prompt
+    assert "MUST use type listening and its own listening_text" in prompt
+    assert "those exercise types have no audio player" in prompt
+    assert "Do not duplicate the listening transcript in other exercises" in prompt
+    assert "Pronunciation must use separate" in prompt
     assert "placed at the start of the explanation" not in prompt
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("returned_type", ["grammar", "listening"])
 @pytest.mark.parametrize("corrected", [True, False])
-async def test_requested_listening_requirement_participates_in_json_retry(monkeypatch, corrected):
-    from app.services.lesson_quality import ListeningLessonExercises
-    from app.services.llm_adapter import LLMAdapter
-
-    invalid = {"exercises": [listening_content(type="multiple_choice", listening_text=None)] * 3}
-    valid = {"exercises": [listening_content()] * 3}
+async def test_requested_listening_requirement_participates_in_json_retry(
+    monkeypatch, returned_type, corrected
+):
+    invalid = {
+        "lesson_type": returned_type,
+        "title": "Places",
+        "cefr_level": "A1",
+        "explanation": {},
+        "exercises": [listening_content(type="multiple_choice", listening_text=None)],
+    }
+    valid = {
+        **invalid,
+        "lesson_type": "listening",
+        "exercises": [listening_content()],
+    }
     chat = AsyncMock(side_effect=[json.dumps(invalid), json.dumps(valid if corrected else invalid)])
-    adapter = LLMAdapter()
-    monkeypatch.setattr(adapter, "_do_chat", chat)
+    monkeypatch.setattr(llm_adapter, "_do_chat", chat)
 
     if corrected:
-        batch = await adapter.structured_output([], ListeningLessonExercises)
-        assert batch.exercises[0].type == "listening"
-        assert batch.exercises[0].listening_text == listening_content()["listening_text"]
+        lesson = await generate_lesson("A1", "listening", "Places", 1, 1)
+        assert lesson.lesson_type == "listening"
+        assert lesson.exercises[0].type == "listening"
+        assert lesson.exercises[0].listening_text == listening_content()["listening_text"]
     else:
         with pytest.raises(LLMResponseError, match="Failed to parse JSON after retry"):
-            await adapter.structured_output([], ListeningLessonExercises)
+            await generate_lesson("A1", "listening", "Places", 1, 1)
 
     assert chat.await_count == 2
     first_messages = chat.await_args_list[0].args[0]
     retry_messages = chat.await_args_list[1].args[0]
     assert retry_messages[:-1] == first_messages
-    assert "at least one listening exercise" in retry_messages[-1]["content"]
-    await adapter.client.close()
+    correction = retry_messages[-1]
+    assert correction["role"] == "user"
+    assert (
+        "Input should be 'listening'"
+        if returned_type == "grammar"
+        else "at least one listening exercise"
+    ) in correction["content"]
 
 
 @pytest.mark.asyncio

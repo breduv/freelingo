@@ -987,15 +987,6 @@ class LLMAdapter:
                 "content": JSON_ONLY_INSTRUCTION,
             }
         ]
-        # Every endpoint receives the actual contract, not just a JSON-only instruction.
-        messages_with_format.append(
-            {
-                "role": "system",
-                "content": "Return exactly this JSON schema: "
-                + json.dumps(schema.model_json_schema()),
-            }
-        )
-
         async def request(request_messages: list[dict]) -> str:
             if deadline is None:
                 return await self._call_with_retry(self._do_chat, request_messages, False)

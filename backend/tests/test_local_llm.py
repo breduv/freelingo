@@ -1,4 +1,4 @@
-"""Provider protocols, configuration isolation, semantic review, and OAuth security."""
+"""Provider protocols, configuration isolation, and OAuth security."""
 
 import asyncio
 import json
@@ -15,80 +15,15 @@ from cryptography.fernet import InvalidToken
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.core.config import settings
-from app.schemas.lessons import ExerciseContent, LessonContent
 from app.services import chatgpt_auth
-from app.services.lesson_quality import LessonReview, review_issues
 from app.services.llm_adapter import LLMAdapter, LLMResponseError, OpenAIResponsesStream
 from app.services.llm_config import LLMOptions, configured_options, runtime_store
-
-
-async def test_operation_keeps_configuration_until_all_steps_finish():
-    from app.services.llm_config import llm_operation
-
-    original = LLMOptions(api_base="https://first.example/v1", model="first", api_key="first-key")
-    replacement = LLMOptions(api_base="https://second.example/v1", model="second")
-    runtime_store.write({"options": original.model_dump()})
-    async with llm_operation():
-        runtime_store.write({"options": replacement.model_dump()})
-        await asyncio.sleep(0)
-        assert configured_options() == original
-    assert configured_options() == replacement
-
-
-async def test_configuration_snapshots_are_isolated_between_concurrent_operations():
-    from app.services.llm_config import llm_operation
-
-    entered = asyncio.Event()
-    changed = asyncio.Event()
-    runtime_store.write({"options": LLMOptions(model="first").model_dump()})
-
-    async def first_operation():
-        async with llm_operation():
-            entered.set()
-            await changed.wait()
-            return configured_options().model
-
-    async def second_operation():
-        await entered.wait()
-        runtime_store.write({"options": LLMOptions(model="second").model_dump()})
-        async with llm_operation():
-            changed.set()
-            return configured_options().model
-
-    assert await asyncio.gather(first_operation(), second_operation()) == ["first", "second"]
-
-
-def test_explanation_size_is_bounded_before_exercises_are_generated():
-    from app.services.lesson_quality import ExplanationContent
-
-    with pytest.raises(ValueError):
-        ExplanationContent(
-            text="x" * 1201,
-            key_points=["Short rule"],
-            examples=[{"sentence": "I am here.", "note": "Present tense"}],
-        )
 
 
 @pytest.mark.parametrize("url", ["http://localhost:wrong/v1", "http://localhost:99999/v1", "http://localhost:0/v1"])
 def test_invalid_endpoint_ports_are_rejected_before_saving(url):
     with pytest.raises(ValueError):
         LLMOptions(api_base=url)
-
-
-async def test_disabled_review_still_generates_a_lesson_in_separate_tasks():
-    from app.services import lesson_quality
-
-    context = {"lesson_type": "grammar", "cefr_level": "A1", "unit_id": "unit"}
-    with (
-        patch.object(lesson_quality, "generate_lesson_parts", AsyncMock(return_value=sample_lesson())) as parts,
-        patch.object(lesson_quality, "review_lesson", AsyncMock()) as review_call,
-    ):
-        await lesson_quality.generate_verified_lesson(
-            LessonContent, target_language="en-GB", context=context
-        )
-    parts.assert_awaited_once()
-    assert parts.await_args.args[0] == context
-    review_call.assert_not_awaited()
 
 
 async def test_disconnect_invalidates_an_inflight_sign_in():
@@ -177,7 +112,6 @@ async def test_provider_defaults_never_expose_environment_keys(client, admin_use
 @pytest.fixture(autouse=True)
 def isolated_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "LLM_CONFIG_PATH", str(tmp_path / "settings.json"))
-    monkeypatch.setattr(settings, "LESSON_QUALITY_REVIEW", False)
 
 
 class MemoryRedis:
@@ -192,74 +126,6 @@ class MemoryRedis:
 
     async def getdel(self, key):
         return self.values.pop(key, None)
-
-
-def sample_lesson(question="___ a very good teacher.", options=None):
-    return LessonContent(
-        lesson_type="grammar",
-        title="Be",
-        cefr_level="A1",
-        explanation={"text": "Be"},
-        exercises=[
-            ExerciseContent(
-                type="multiple_choice",
-                question=question,
-                options=options or ["I am", "He is", "They are", "You is"],
-                correct=(options or ["I am"])[0],
-            )
-        ],
-    )
-
-
-def review(valid_indices):
-    return LessonReview(
-        explanation_issues=[],
-        exercises=[
-            {
-                "index": 0,
-                "valid": True,
-                "issues": [],
-                "options": [
-                    {
-                        "index": index,
-                        "valid": index in valid_indices,
-                        "reason": "Independent judgment",
-                    }
-                    for index in range(4)
-                ],
-            }
-        ],
-    )
-
-
-def test_screenshot_with_two_correct_answers_is_rejected():
-    issues = review_issues(sample_lesson(), review([0, 1]))
-    assert any("found 2" in issue for issue in issues)
-
-
-def test_independent_reviewer_cannot_silently_change_the_answer_key():
-    assert any("answer key" in issue for issue in review_issues(sample_lesson(), review([1])))
-
-
-def test_complete_unique_correct_review_passes():
-    assert (
-        review_issues(sample_lesson("I ___ a teacher.", ["am", "is", "are", "be"]), review([0]))
-        == []
-    )
-
-
-def test_incomplete_or_duplicate_review_fails_closed():
-    judgment = review([0])
-    judgment.exercises[0].options.pop()
-    assert review_issues(sample_lesson(), judgment)
-    judgment = review([0])
-    judgment.exercises.append(judgment.exercises[0])
-    assert review_issues(sample_lesson(), judgment)
-
-
-def test_duplicate_answer_options_rejected():
-    with pytest.raises(ValueError, match="distinct"):
-        sample_lesson(options=["I am", " i  AM ", "He is", "You is"])
 
 
 def test_storage_encrypts_and_preserves_credentials():
@@ -498,159 +364,3 @@ async def test_failed_subscription_does_not_switch_to_paid_api(client, admin_use
     assert response.status_code == 409
     assert configured_options().provider == "ollama"
     assert not runtime_store.read().get("options")
-
-
-async def test_quality_retry_repairs_ambiguity_and_blinds_the_reviewer(monkeypatch):
-    from app.services import lesson_quality
-
-    monkeypatch.setattr(settings, "LESSON_QUALITY_REVIEW", True)
-    bad = sample_lesson()
-    good = sample_lesson("I ___ a teacher.", ["am", "is", "are", "be"])
-    context = {"lesson_type": "grammar", "cefr_level": "A1", "unit_id": "unit"}
-    with (
-        patch.object(
-            lesson_quality, "generate_lesson_parts", AsyncMock(side_effect=[bad, good])
-        ) as parts,
-        patch.object(
-            lesson_quality.llm_adapter,
-            "structured_output",
-            AsyncMock(side_effect=[review([0, 1]), review([0])]),
-        ) as generate,
-    ):
-        result = await lesson_quality.generate_verified_lesson(
-            LessonContent, target_language="en-GB", context=context
-        )
-    assert result.exercises[0].question == "I ___ a teacher."
-    review_input = json.loads(generate.await_args_list[0].args[0][1]["content"])
-    assert "correct" not in review_input["lesson"]["exercises"][0]
-    assert review_input["context"] == context
-    assert any("found 2" in issue for issue in parts.await_args_list[1].kwargs["feedback"])
-    deadlines = [
-        call.kwargs["deadline"] for call in parts.await_args_list + generate.await_args_list
-    ]
-    assert len(set(deadlines)) == 1
-
-
-async def test_persistently_ambiguous_lesson_is_not_returned(monkeypatch):
-    from app.services import lesson_quality
-
-    monkeypatch.setattr(settings, "LESSON_QUALITY_REVIEW", True)
-    with (
-        patch.object(
-            lesson_quality, "generate_lesson_parts", AsyncMock(return_value=sample_lesson())
-        ) as parts,
-        patch.object(
-            lesson_quality.llm_adapter,
-            "structured_output",
-            AsyncMock(side_effect=[review([0, 1]), review([0, 1])]),
-        ),
-    ):
-        with pytest.raises(LLMResponseError, match="quality review"):
-            await lesson_quality.generate_verified_lesson(
-                LessonContent,
-                target_language="en-GB",
-                context={"lesson_type": "grammar", "cefr_level": "A1", "unit_id": "unit"},
-            )
-    assert parts.await_count == settings.LESSON_QUALITY_MAX_ATTEMPTS
-
-
-async def test_split_generation_preserves_curriculum_and_uses_smaller_tasks():
-    from app.services import lesson_quality
-
-    outline = lesson_quality.LessonOutline(
-        title="Be",
-        explanation={
-            "text": "Use am with I.",
-            "key_points": ["I am"],
-            "examples": [{"sentence": "I am a student.", "note": "Present-simple be."}],
-        },
-        vocabulary=[
-            {"word": word, "definition": word, "example": word}
-            for word in ("teacher", "student", "happy")
-        ],
-    )
-    exercises = lesson_quality.LessonExercises(
-        exercises=[sample_lesson("I ___ a teacher.", ["am", "is", "are", "be"]).exercises[0]] * 3
-    )
-    context = {
-        "lesson_type": "grammar",
-        "cefr_level": "A1",
-        "unit_id": "a1-unit-1",
-        "grammar_points": ["to-be"],
-    }
-    with patch.object(
-        lesson_quality.llm_adapter, "structured_output", AsyncMock(side_effect=[outline, exercises])
-    ) as generate:
-        result = await lesson_quality.generate_lesson_parts(
-            context, LessonContent, deadline=asyncio.get_running_loop().time() + 60
-        )
-    assert result.unit_id == "a1-unit-1" and result.cefr_level == "A1"
-    assert generate.await_args_list[0].args[1] is lesson_quality.LessonOutline
-    assert generate.await_args_list[1].args[1] is lesson_quality.LessonExercises
-
-
-def test_native_outline_requires_translated_teaching_material():
-    from app.services.lesson_quality import NativeLessonOutline
-
-    with pytest.raises(ValueError, match="native_explanation"):
-        NativeLessonOutline.model_validate(
-            {
-                "title": "Be",
-                "explanation": {
-                    "text": "Be",
-                    "key_points": ["I am"],
-                    "examples": [{"sentence": "I am here.", "note": "Present-simple be"}],
-                },
-                "vocabulary": [
-                    {"word": word, "definition": word, "example": word}
-                    for word in ("teacher", "student", "happy")
-                ],
-            }
-        )
-
-
-async def test_writing_task_uses_grading_criteria_instead_of_answer_choices():
-    from app.services import lesson_quality
-
-    outline = lesson_quality.LessonOutline(
-        title="Be",
-        explanation={
-            "text": "Use be.",
-            "key_points": ["I am"],
-            "examples": [{"sentence": "I am here.", "note": "Present-simple be"}],
-        },
-        vocabulary=[
-            {"word": word, "definition": word, "example": word}
-            for word in ("teacher", "student", "happy")
-        ],
-    )
-    choice = sample_lesson().exercises[0]
-    incorrect_writing = ExerciseContent(
-        type="free_write",
-        question="Introduce yourself.",
-        options=["I am a student.", "I is a student."],
-        correct="I am a student.",
-    )
-    exercises = lesson_quality.LessonExercises(exercises=[choice, choice, incorrect_writing])
-    writing = lesson_quality.WritingTask(
-        question="Write one sentence about your profession using present-simple be.",
-        criteria=[
-            "Mention a profession",
-            "Use present-simple be with the correct subject agreement",
-        ],
-        model_answer="I am a teacher.",
-        explanation="Use am with I.",
-    )
-    with patch.object(
-        lesson_quality.llm_adapter,
-        "structured_output",
-        AsyncMock(side_effect=[outline, exercises, writing]),
-    ):
-        result = await lesson_quality.generate_lesson_parts(
-            {"lesson_type": "grammar", "cefr_level": "A1", "unit_id": "unit"},
-            LessonContent,
-            deadline=asyncio.get_running_loop().time() + 60,
-        )
-    assert result.exercises[2].options == writing.criteria
-    assert result.exercises[2].correct == "I am a teacher."
-    assert "I is a student." not in result.exercises[2].options

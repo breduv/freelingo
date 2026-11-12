@@ -78,10 +78,6 @@ retains the original provider clients and native protocols, while `chatgpt_auth.
 OAuth connection. `llm_settings.py` exposes administrator-only settings APIs and loopback OAuth
 handlers; the panel itself is a Next.js route. Full contracts belong to `services.instructions.md`.
 
-`lesson_quality.py` coordinates split generation and optional blind review using bounded generation
-schemas. `llm_operation()` pins configuration across the full operation. Lesson persistence keeps
-the existing database/JSON contracts; these changes require no Alembic revision.
-
 Pydantic schemas validate HTTP inputs/outputs and selected LLM structured responses. ORM models must
 not be returned directly when a response schema defines a narrower public contract.
 

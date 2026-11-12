@@ -16,15 +16,12 @@ test-file inventories in this specification.
 
 ## Backend tests
 
-LLM configuration tests use temporary encrypted stores. Concurrency tests cover pinned multi-step
-options and serialized token rotation; mocked OAuth checks include browser/state binding, signed
-identity validation and disconnect invalidation. Lesson tests cover blind review coverage,
-ambiguous choices, bounded explanations and split generation with review disabled. Curriculum
-context checks retain language overlays, lesson-type ratios and previous-lesson reuse policies.
+LLM configuration tests use temporary encrypted stores. Concurrency tests cover serialized token
+rotation; mocked OAuth checks include browser/state binding, signed identity validation and
+disconnect invalidation. Lesson generation and prompt tests retain the upstream contracts.
 Unsupported saved providers are rejected without conversion. The original
 provider tests remain, including native Anthropic streaming, errors and tools. ChatGPT and saved
-configuration tests supplement them. Ordinary domain
-tests disable the semantic gate unless explicitly testing it, so no provider call escapes mocks.
+configuration tests supplement them.
 
 Backend tests live in `backend/tests/` and use:
 

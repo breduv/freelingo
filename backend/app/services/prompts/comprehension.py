@@ -7,8 +7,6 @@ Explain in 1–3 short sentences in {native_language} WHY the stored correct opt
 the question. Use language accessible to a {level} learner. Keep quoted practice text in
 {target_language}. For inference questions, explain how the passage supports the inference;
 do not claim the inference is stated literally. Do not invent information or change the key.
-If the passage does not support the stored key, say that the answer cannot be justified from
-the passage rather than inventing a reason; use a relevant exact quote to show the issue.
 Include one short, contiguous, EXACT quote from the passage as evidence (no added quotation
 marks, ellipses, translation or paraphrase). Explain the relevant contrast with distractors
 where helpful. Do not assume which option the learner chose.
@@ -26,12 +24,6 @@ Requirements:
 - Use {target_language_name} vocabulary and spelling conventions
 {language_prompt_overlay}
 - Write naturally, as if it will be read aloud
-- Use a coherent script suitable for one TTS voice; comprehension must not depend on distinguishing
-  speaker voices, sound effects or visual formatting.
-- Every question must be answerable from this passage alone, with exactly one correct option.
-  Check all four options independently; avoid overlapping alternatives and outside knowledge.
-  Keep questions and options at the learner's level. Inference must follow from the passage;
-  at A1/A2 use simple supported implications rather than subtle unstated motives.
 - Do not use headers, markdown, lists, or formatting — plain flowing prose only
 
 Return ONLY valid JSON with no prose, no code fences, no extra text:
@@ -64,10 +56,6 @@ Requirements:
 - Use {target_language_name} vocabulary and spelling conventions
 {language_prompt_overlay}
 - Write in the natural register appropriate for the exercise type
-- Every question must be answerable from this passage alone, with exactly one correct option.
-  Check all four options independently; avoid overlapping alternatives and outside knowledge.
-  Keep questions and options at the learner's level. Inference must follow from the passage;
-  at A1/A2 use simple supported implications rather than subtle unstated motives.
 - Do not use headers, markdown, or lists — plain flowing prose only
   (exception: emails may include a greeting and sign-off)
 
