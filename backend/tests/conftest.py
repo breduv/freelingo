@@ -24,6 +24,15 @@ from app.core.security import create_access_token
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def isolate_llm_configuration(tmp_path, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "LLM_CONFIG_PATH", str(tmp_path / "llm-settings.json"))
+    # Existing domain tests mock generation; semantic review is exercised explicitly.
+    monkeypatch.setattr(settings, "LESSON_QUALITY_REVIEW", False)
+
+
 @pytest.fixture
 def stripe_provider(monkeypatch):
     """Stateful Stripe boundary with SDK objects and independently controlled snapshots."""

@@ -32,6 +32,7 @@ import {
 
 export default function SettingsPage() {
   const t = useTranslations('settings')
+  const tAI = useTranslations('aiSettings')
   const tCommon = useTranslations('common')
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
@@ -72,6 +73,14 @@ export default function SettingsPage() {
       <SettingsNav items={navItems} />
 
       <div className="grid gap-3 md:grid-cols-2">
+        {user?.role === 'admin' && (
+          <SettingsActionCard
+            href="/settings/ai"
+            label={tAI('title')}
+            description={tAI('description')}
+            icon={Bot}
+          />
+        )}
         <SettingsActionCard
           href="/settings/languages"
           label={t('languagesManage')}

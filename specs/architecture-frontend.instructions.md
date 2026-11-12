@@ -5,6 +5,20 @@ applyTo: "frontend/**, messages/**"
 
 # Frontend Architecture
 
+## Installation AI panel
+
+`/settings/ai` uses the existing Settings shell, `fl-*` tokens, Geist fonts, theme and authenticated
+`apiFetch` lifecycle. Administrators discover it through a card on `/settings`; backend role checks
+remain authoritative. The panel selects Ollama, OpenAI, Anthropic, DeepSeek or ChatGPT with each
+provider's own settings/defaults, loads/saves options, tests a candidate configuration,
+discovers models, and starts/disconnects ChatGPT authorization. Keys are blank on read and retained
+by an explicit server-side policy. Pending requests are aborted on unmount/account replacement;
+failed saves preserve editable values. New labels are Russian for `ru` and English in other catalogs.
+
+The local Nginx gateway routes `/llm`, `/llm/auth/start` and `/auth/callback` directly to backend
+handlers. `/llm` redirects to the native panel; OAuth callback handling never runs in the browser.
+Next.js retains its original API rewrites; Nginx also forwards WebSocket upgrades.
+
 ## Role and boundaries
 
 The frontend is a Next.js App Router application responsible for presentation, navigation, browser

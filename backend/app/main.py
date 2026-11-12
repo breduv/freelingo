@@ -42,6 +42,7 @@ from app.routers import (
     languages,
     lessons,
     listening,
+    llm_settings,
     memories,
     phrasebook,
     progress,
@@ -165,6 +166,7 @@ app.include_router(memories.router)
 app.include_router(phrasebook.router)
 app.include_router(languages.router)
 app.include_router(health_router.router)
+app.include_router(llm_settings.router)
 app.include_router(vocabulary.router)
 
 if settings.STRIPE_ENABLED:

@@ -18,6 +18,16 @@ speech, email, or billing providers directly.
 
 ## Repository boundaries
 
+Installation-wide AI settings and ChatGPT credentials are backend-owned operational state stored in
+an encrypted file, separate from language-owned learner data. The Settings panel uses authenticated
+backend APIs; an external OAuth identity never authenticates a FreeLingo user. See
+`services.instructions.md` and `platform.instructions.md` for the owning contracts.
+
+The local Compose overlay uses a separate Dockerfile to overlay selected local files on pinned
+original source and places an HTTP/WebSocket gateway on loopback. Images stay local. It uses its
+own project name and persistent volumes; deployment topology and
+backup requirements belong to `docker.instructions.md`.
+
 - `backend/app/core/`: configuration, database lifecycle, authentication dependencies, logging, and
   rate limiting.
 - `backend/app/models/`: SQLAlchemy persistence models.

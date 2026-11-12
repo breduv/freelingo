@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from app.core.app_logger import get_logger
 from app.core.config import settings
+from app.services.llm_config import LLMOptions, configured_options
 from app.services.prompts.common import (
     ANTHROPIC_SYSTEM_ONLY_TRIGGER,
     JSON_ONLY_INSTRUCTION,
@@ -213,6 +214,25 @@ class LLMStream:
             yield chunk
 
 
+class ManagedLLMStream(LLMStream):
+    """Keep an immutable provider snapshot alive until its stream is closed."""
+
+    def __init__(self, stream: LLMStream, client: object):
+        self._delegate = stream
+        self._client = client
+
+    def __getattr__(self, name):
+        return getattr(self._delegate, name)
+
+    async def _iterate(self):
+        try:
+            async with aclosing(self._delegate.__aiter__()) as chunks:
+                async for chunk in chunks:
+                    yield chunk
+        finally:
+            await self._client.close()
+
+
 def _check_openai_response(response: object) -> None:
     """A successful HTTP request can still contain a failed or incomplete response."""
     status = getattr(response, "status", None)
@@ -336,7 +356,7 @@ class LLMToolStream(LLMStream):
     async def _provider_text_and_calls(
         self, stream: object, *, collect_calls: bool
     ) -> AsyncGenerator[str]:
-        if self._adapter.provider == "openai":
+        if self._adapter.uses_responses_api:
             try:
                 async with aclosing(stream.__aiter__()) as parts:
                     async for text in parts:
@@ -573,7 +593,7 @@ class LLMToolStream(LLMStream):
             initial_text,
             self.tool_calls,
             self.tool_results,
-            response_output=self._stream.output if self._adapter.provider == "openai" else None,
+            response_output=self._stream.output if self._adapter.uses_responses_api else None,
         )
         try:
             continuation = await self._adapter._call_with_retry(
@@ -618,33 +638,41 @@ class LLMToolStream(LLMStream):
 
 
 class LLMAdapter:
-    def __init__(self):
-        self.provider = settings.LLM_PROVIDER
+    def __init__(self, options: LLMOptions | None = None):
+        self.options = options or configured_options()
+        self.provider = self.options.provider
+        self.model = self.options.model
         self._native_tools_available_logged = False
         if self.provider == "ollama":
             self.client = AsyncOpenAI(
-                base_url=f"{settings.OLLAMA_BASE_URL}/v1",
-                api_key="ollama",
+                base_url=self.options.api_base + "/v1",
+                api_key=self.options.api_key or "ollama",
+                max_retries=0,
             )
-            self.model = settings.OLLAMA_MODEL
-        elif self.provider == "openai":
-            self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-            self.model = settings.OPENAI_MODEL
-        elif self.provider == "deepseek":
+        elif self.provider in ("openai", "deepseek", "chatgpt"):
             self.client = AsyncOpenAI(
-                base_url="https://api.deepseek.com/v1",
-                api_key=settings.DEEPSEEK_API_KEY,
+                base_url=self.options.api_base,
+                api_key=self.options.api_key or "local-no-key",
+                max_retries=0,
             )
-            self.model = settings.DEEPSEEK_MODEL
         elif self.provider == "anthropic":
             self._anthropic = _anthropic.AsyncAnthropic(
-                api_key=settings.ANTHROPIC_API_KEY,
+                api_key=self.options.api_key,
                 # Retries are handled by _call_with_retry; disable the SDK's
                 # built-in retry logic to avoid exponential back-off stacking.
                 max_retries=0,
             )
             self.client = None
-            self.model = settings.ANTHROPIC_MODEL
+        else:
+            raise ValueError(f"Unsupported LLM provider: {self.provider}")
+
+    async def close(self) -> None:
+        client = self._anthropic if self.provider == "anthropic" else self.client
+        await client.close()
+
+    @property
+    def uses_responses_api(self) -> bool:
+        return self.provider in ("openai", "chatgpt")
 
     async def _call_with_retry(
         self, fn, *args, tools_requested: bool = False, max_retries: int = MAX_RETRIES, **kwargs
@@ -691,6 +719,25 @@ class LLMAdapter:
         tool_executor: ToolExecutor | None = None,
         fallback_messages: list[dict] | None = None,
     ) -> str | LLMStream:
+        if self is globals().get("llm_adapter"):
+            options = configured_options()
+            if options is not None:
+                snapshot = LLMAdapter(options)
+                try:
+                    result = await snapshot.chat(
+                        messages,
+                        stream,
+                        tools=tools,
+                        tool_executor=tool_executor,
+                        fallback_messages=fallback_messages,
+                    )
+                except BaseException:
+                    await snapshot.close()
+                    raise
+                if stream:
+                    return ManagedLLMStream(result, snapshot)
+                await snapshot.close()
+                return result
         if tools and (not stream or tool_executor is None):
             raise ValueError("Native tools require streaming and a tool executor")
         tools_unsupported = False
@@ -750,7 +797,7 @@ class LLMAdapter:
             )
         if self.provider == "anthropic":
             return AnthropicLLMStream(result)
-        if self.provider == "openai":
+        if self.uses_responses_api:
             return result
         return LLMStream(result)
 
@@ -760,17 +807,20 @@ class LLMAdapter:
         stream: bool = False,
         tools: list[LLMTool] | None = None,
         *,
-        request_timeout: float = REQUEST_TIMEOUT,
+        request_timeout: float | None = None,
         sdk_max_retries: int | None = None,
     ):
+        request_timeout = (
+            self.options.timeout_seconds
+            if request_timeout is None
+            else min(request_timeout, self.options.timeout_seconds)
+        )
+        if tools and not self.options.native_tools:
+            raise LLMToolsUnsupportedError("Native tools disabled for this endpoint")
         if self.provider == "anthropic":
-            if request_timeout != REQUEST_TIMEOUT:
-                return await self._anthropic_chat(
-                    messages, stream, tools, request_timeout=request_timeout
-                )
-            return await self._anthropic_chat(messages, stream, tools)
+            return await self._anthropic_chat(messages, stream, tools, request_timeout=request_timeout)
 
-        if self.provider == "openai":
+        if self.uses_responses_api:
             return await self._openai_responses(
                 messages,
                 stream,
@@ -785,6 +835,10 @@ class LLMAdapter:
         extra: dict = {}
         if stream:
             extra["stream_options"] = {"include_usage": True}
+        if self.options.max_output_tokens is not None:
+            extra["max_tokens"] = self.options.max_output_tokens
+        if self.options.temperature is not None:
+            extra["temperature"] = self.options.temperature
         if tools:
             extra["tools"] = [
                 {
@@ -811,6 +865,8 @@ class LLMAdapter:
             return response
 
         content = response.choices[0].message.content
+        if getattr(response.choices[0], "finish_reason", None) == "length":
+            raise LLMResponseError("LLM output was truncated. Increase the output token limit.")
         if not content:
             raise LLMResponseError("LLM returned empty response")
         return content
@@ -835,8 +891,8 @@ class LLMAdapter:
         sdk_max_retries: int | None,
     ):
         extra: dict = {}
-        if settings.OPENAI_REASONING_EFFORT:
-            extra["reasoning"] = {"effort": settings.OPENAI_REASONING_EFFORT}
+        if self.options.reasoning_effort:
+            extra["reasoning"] = {"effort": self.options.reasoning_effort}
         if tools:
             extra["tools"] = [
                 {
@@ -851,20 +907,51 @@ class LLMAdapter:
             ]
             extra["parallel_tool_calls"] = False
 
+        input_messages = messages
+        if self.provider == "chatgpt":
+            from app.services.chatgpt_auth import ChatGPTAuthError, access_token
+
+            try:
+                self.client.api_key = await access_token()
+            except ChatGPTAuthError as exc:
+                raise LLMUnavailableError(str(exc)) from exc
+            # The subscription route requires streaming and developer instructions.
+            input_messages = [
+                {**message, "role": "developer"} if message.get("role") == "system" else message
+                for message in messages
+            ]
+            if tools:
+                extra["tools"] = [
+                    {
+                        "type": "namespace",
+                        "name": "freelingo",
+                        "description": "FreeLingo tutor tools",
+                        "tools": extra["tools"],
+                    }
+                ]
+        else:
+            if self.options.max_output_tokens is not None:
+                extra["max_output_tokens"] = self.options.max_output_tokens
+            if self.options.temperature is not None:
+                extra["temperature"] = self.options.temperature
+
         client = self.client
         if sdk_max_retries is not None:
             client = client.with_options(max_retries=sdk_max_retries)
         response = await client.responses.create(
             model=self.model,
-            input=messages,
-            stream=stream,
+            input=input_messages,
+            stream=stream or self.provider == "chatgpt",
             store=False,
             include=["reasoning.encrypted_content"],
             timeout=request_timeout,
             **extra,
         )
-        if stream:
-            return OpenAIResponsesStream(response, tools_requested=bool(tools))
+        if stream or self.provider == "chatgpt":
+            normalized = OpenAIResponsesStream(response, tools_requested=bool(tools))
+            if stream:
+                return normalized
+            return "".join([part async for part in normalized])
         _check_openai_response(response)
         content = response.output_text
         if not content:
@@ -874,6 +961,14 @@ class LLMAdapter:
     async def structured_output(
         self, messages: list[dict], schema: type[BaseModel], *, deadline: float | None = None
     ) -> BaseModel:
+        if self is globals().get("llm_adapter"):
+            options = configured_options()
+            if options is not None:
+                snapshot = LLMAdapter(options)
+                try:
+                    return await snapshot.structured_output(messages, schema, deadline=deadline)
+                finally:
+                    await snapshot.close()
         # Use JSON mode for all providers — more reliable across versions
         if deadline is None:
             return await self._structured_via_json(messages, schema)
@@ -892,6 +987,14 @@ class LLMAdapter:
                 "content": JSON_ONLY_INSTRUCTION,
             }
         ]
+        # Every endpoint receives the actual contract, not just a JSON-only instruction.
+        messages_with_format.append(
+            {
+                "role": "system",
+                "content": "Return exactly this JSON schema: "
+                + json.dumps(schema.model_json_schema()),
+            }
+        )
 
         async def request(request_messages: list[dict]) -> str:
             if deadline is None:
@@ -953,7 +1056,7 @@ class LLMAdapter:
         *,
         response_output: list[dict] | None = None,
     ) -> list[dict]:
-        if self.provider == "openai":
+        if self.uses_responses_api:
             # Replay all native items (including encrypted reasoning) with store=False.
             # This state belongs to the stream, never to the shared adapter instance.
             return (
@@ -1048,10 +1151,12 @@ class LLMAdapter:
         kwargs: dict = dict(
             model=self.model,
             messages=user_messages,
-            max_tokens=settings.ANTHROPIC_MAX_TOKENS,
+            max_tokens=self.options.max_output_tokens or settings.ANTHROPIC_MAX_TOKENS,
             stream=stream,
             timeout=request_timeout,
         )
+        if self.options.temperature is not None:
+            kwargs["temperature"] = self.options.temperature
         # Only pass system when present — Anthropic SDK does not accept None.
         if system is not None:
             kwargs["system"] = system

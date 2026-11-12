@@ -7,6 +7,7 @@ from openai import APITimeoutError
 from pydantic import BaseModel
 
 from app.services.llm_adapter import LLMAdapter, LLMTimeoutError
+from app.services.llm_config import LLMOptions
 
 
 class Payload(BaseModel):
@@ -14,12 +15,8 @@ class Payload(BaseModel):
 
 
 def adapter_with_client():
-    with patch("app.services.llm_adapter.settings") as settings:
-        settings.LLM_PROVIDER = "ollama"
-        settings.OLLAMA_BASE_URL = "http://localhost:8080"
-        settings.OLLAMA_MODEL = "test"
-        with patch("app.services.llm_adapter.AsyncOpenAI"):
-            adapter = LLMAdapter()
+    with patch("app.services.llm_adapter.AsyncOpenAI"):
+        adapter = LLMAdapter(LLMOptions(api_base="http://localhost:8080/v1", model="test"))
     adapter.client = MagicMock()
     adapter.client.with_options.return_value = adapter.client
     adapter.client.chat.completions.create = AsyncMock()
@@ -36,7 +33,7 @@ async def test_sdk_timeout_is_typed_and_not_retried_for_exercise_generation():
         )
     assert create.await_count == 1
     adapter.client.with_options.assert_called_once_with(max_retries=0)
-    assert create.await_args.kwargs["timeout"] > 120
+    assert create.await_args.kwargs["timeout"] == 120
 
 
 async def test_json_correction_uses_remaining_budget_and_preserves_timeout():

@@ -15,6 +15,31 @@ in `rate-limiting.instructions.md`.
 This document owns the HTTP/WebSocket interface inventory. Domain specifications own business
 behavior; `umami.instructions.md` owns analytics event semantics, privacy, deduplication, and delivery.
 
+## Installation AI settings
+
+All `/api/admin/llm` endpoints require an active administrator through `require_admin`. Responses
+are non-cacheable; keys and OAuth tokens are never returned. Provider and storage contracts belong
+to `services.instructions.md`; exact rate limits belong to `rate-limiting.instructions.md`.
+
+- `GET /api/admin/llm`: returns sanitized `options`, `has_api_key`, connection status, settings
+  `source` (`saved` or `environment`) and sanitized `provider_defaults` for the five-provider selector.
+- `PUT /api/admin/llm`: validates and atomically saves options without restart. Accepts
+  `keep_api_key` (default true); empty keys are retained only for the same endpoint and source.
+  ChatGPT without granted plan access returns 409; invalid options return 422.
+- `POST /api/admin/llm/models`: accepts candidate options and returns `{models: [{id, name}]}`
+  without saving. Account authorization failures return 409; discovery failures return 502.
+- `POST /api/admin/llm/test`: accepts candidate options and makes one short inference without
+  saving. Returns `{ok, model, answer}`, or 409/502 for connection/provider failures.
+- `POST /api/admin/llm/chatgpt/connect`: returns a one-use loopback browser-bootstrap `url`.
+- `POST /api/admin/llm/chatgpt/disconnect`: clears local tokens, invalidates pending sign-ins,
+  and returns `disconnected` and `remote_revocation_confirmed`.
+
+Public `GET /llm` redirects to the frontend `/settings/ai`. `GET /llm/auth/start` consumes an
+unexpired one-use `ticket`, sets an HTTP-only browser-binding cookie and redirects to OpenAI.
+`GET /auth/callback` validates one-use state, cookie binding and the initiating administrator before
+exchanging the code. It redirects to `/settings/ai?chatgpt=connected` on success. Errors return a
+generic 400 page without credentials. Callback and bootstrap queries must not enter access logs.
+
 ## Postman templates and maintenance
 
 The project owner's private **Proyectos** Postman workspace contains the **FreeLingo** collection and

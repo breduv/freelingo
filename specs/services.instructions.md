@@ -16,7 +16,7 @@ their service boundary; detailed workflows and eligibility rules belong to the l
 
 ## LLM adapter
 
-`llm_adapter.py` provides provider-neutral access to Ollama, OpenAI, Anthropic, and DeepSeek.
+`llm_adapter.py` provides provider-neutral access to Ollama, OpenAI, Anthropic, DeepSeek, and ChatGPT.
 
 OpenAI uses the Responses API for every LLM request; Ollama and DeepSeek use Chat Completions and
 Anthropic uses its native API. The OpenAI model defaults to `gpt-6-luna`. Optional
@@ -41,7 +41,8 @@ validation contract, and `parallel_tool_calls=false`; the adapter still enforces
   only for its current WebSocket session.
 - `structured_output(messages, schema, deadline=None)` requests JSON and validates a Pydantic model,
   with one correction generation after parse/validation failure. An optional monotonic deadline
-  bounds both calls, uses remaining time per request, and disables SDK/adapter transport retries.
+  bounds both calls, caps requests by remaining time and the configured request timeout, and disables
+  SDK/adapter transport retries.
 - `parse_llm_json(raw)` strips optional fences and parses JSON for callers that do not use structured
   output.
 - The exception hierarchy includes `LLMError`, `LLMTimeoutError`, `LLMUnavailableError`,
@@ -49,6 +50,49 @@ validation contract, and `parallel_tool_calls=false`; the adapter still enforces
 
 Retry, streaming-failure, and provider-output behavior is defined in
 `llm-error-handling.instructions.md`.
+
+### Configuration and lifecycle
+
+Only the five declared providers are accepted. Cloud-provider endpoints are fixed; Ollama exposes
+its server address. Operator options control timeout, output limit, temperature, OpenAI/ChatGPT
+reasoning, tools and semantic review. Saved LLM keys do not change speech credentials.
+
+`llm_config.py` owns validated `LLMOptions`. Saved administrator options take precedence over
+initial environment values. New chat/structured operations create independent adapter snapshots;
+clients close when the request or returned stream finishes. `llm_operation()` pins the same options
+across all generation, correction and review steps of a lesson or replacement exercise. Concurrent
+saves affect later operations. No failure silently switches endpoints or billing paths.
+
+`LLM_CONFIG_PATH` defaults to `/data/llm/settings.json`. The encrypted file stores options, stable
+host identity and ChatGPT credentials outside PostgreSQL. Fernet uses a key derived from `SECRET_KEY`;
+writes are atomic with owner-only POSIX file permissions. Async file-lock acquisition serializes
+writers and refresh-token rotation across Linux workers. Unreadable/corrupted storage fails closed.
+Backups need both this file and the installation secret; changing `SECRET_KEY` requires credential
+migration or an intentional settings reset. The API never returns saved keys or OAuth tokens.
+An empty API key preserves the active provider key only when requested and its endpoint is unchanged.
+Switching providers may use that provider's own environment credential, never the previous provider's key.
+Read responses include sanitized provider defaults for the selector. Only the five declared providers
+are accepted, including in saved settings; unsupported configurations fail closed without migration
+or automatic provider switching.
+
+### ChatGPT connection
+
+`chatgpt_auth.py` implements the official local public-client flow: a stable host UUID, dynamic
+client registration, PKCE, state and nonce. Administrator-issued browser tickets and browser-bound
+Redis state are single-use and expire after ten minutes. The callback rechecks the initiating active
+administrator, verifies the ID-token signature, issuer, audience, expiry and nonce, and associates
+the issued client ID with the verified subject. Reauthorization must retain that subject. Disconnect
+invalidates pending sign-ins, clears local tokens even if remote revocation fails, and retains the
+registration. Token refreshes serialize and save rotated tokens atomically.
+
+Plan inference requires `chatgpt.tokens.use.direct`; identity alone is insufficient. It uses the
+public Responses endpoint with `stream=true`, `store=false`, developer messages, namespace-wrapped
+function tools, and no unsupported temperature/output-token fields. Model discovery reads the
+account's catalog; only successful completed inference confirms access for a request. Limits and
+availability remain OpenAI-controlled. One administrator-managed account serves the entire local
+installation; speech uses its own services and credentials.
+
+Protocol reference: [Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source).
 
 ## Games
 
@@ -87,7 +131,8 @@ LLM calls. The eligibility contract lives in `study-plan.instructions.md`.
 `lesson_generator.py` uses the LLM within curriculum, CEFR, target-language, and native-language
 constraints. It:
 
-- generates lesson explanation, vocabulary, and validated exercise structures;
+- generates bounded explanation/vocabulary, then exercises and writing tasks separately through
+  `lesson_quality.py`; optional blind review rejects ambiguous content before persistence;
 - includes optional native-language question translations in generated/replacement exercises;
 - varies instructions by declared lesson type;
 - summarizes bounded prior-unit content to reduce repetition;

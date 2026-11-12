@@ -12,18 +12,19 @@ from app.schemas.lessons import (
     PronunciationEvaluation,
 )
 from app.services.language_helpers import get_language_name, get_native_language_name
+from app.services.lesson_quality import generate_verified_lesson, review_regenerated_exercise
 from app.services.llm_adapter import llm_adapter
+from app.services.llm_config import llm_operation
 from app.services.prompts import lesson as lesson_prompts
 from app.services.prompts.common import get_language_prompt_overlay
 from app.services.prompts.lesson import (
     build_fill_blank_eval_prompt,
     build_free_write_eval_prompt,
-    build_lesson_generation_prompt,
+    build_previous_lessons_block,
     build_pronunciation_eval_prompt,
     build_regenerate_exercise_prompt,
 )
 
-LESSON_GENERATION_PROMPT = lesson_prompts.LESSON_GENERATION_PROMPT
 FILL_BLANK_EVAL_PROMPT = lesson_prompts.FILL_BLANK_EVAL_PROMPT
 FREE_WRITE_EVAL_PROMPT = lesson_prompts.FREE_WRITE_EVAL_PROMPT
 PRONUNCIATION_EVAL_PROMPT = lesson_prompts.PRONUNCIATION_EVAL_PROMPT
@@ -163,32 +164,33 @@ async def generate_lesson(
     native_language: str | None = None,
     previous_lessons: list[dict[str, Any]] | None = None,
 ) -> LessonContent:
-    gp_str = ", ".join(grammar_points) if grammar_points else "none specified"
-    vs_str = ", ".join(vocabulary_set_ids) if vocabulary_set_ids else "general"
     target_language_name = get_language_name(target_language)
     native_language_name = get_native_language_name(native_language) if native_language else "none"
     language_prompt_overlay = get_language_prompt_overlay(target_language)
     valid_slugs = get_valid_grammar_slugs(target_language)
-    valid_slugs_str = ", ".join(sorted(valid_slugs))
-    prompt = build_lesson_generation_prompt(
-        cefr_level=cefr_level,
-        target_language_name=target_language_name,
-        native_language_name=native_language_name,
-        lesson_type=lesson_type,
-        topic=topic,
-        unit_id=unit_id or "—",
-        grammar_points=gp_str,
-        vocabulary_set_ids=vs_str,
-        week=week,
-        day=day,
-        valid_slugs=valid_slugs_str,
-        language_prompt_overlay=language_prompt_overlay,
-        previous_lessons_summary=build_previous_lessons_summary(previous_lessons or []),
-    )
-
-    lesson = await llm_adapter.structured_output(
-        [{"role": "system", "content": prompt}],
+    lesson = await generate_verified_lesson(
         ListeningLessonContent if lesson_type == "listening" else LessonContent,
+        target_language=target_language,
+        context={
+            "target_language": target_language_name,
+            "native_language": native_language_name,
+            "cefr_level": cefr_level,
+            "lesson_type": lesson_type,
+            "topic": topic,
+            "unit_id": unit_id,
+            "week": week,
+            "day": day,
+            "grammar_points": grammar_points or [],
+            "minimum_grammar_exercise_percentage": lesson_prompts.build_grammar_exercise_ratio(
+                lesson_type
+            ),
+            "vocabulary_sets": vocabulary_set_ids or [],
+            "lesson_type_focus": lesson_prompts.build_lesson_type_guidance(lesson_type),
+            "previous_lessons": build_previous_lessons_block(
+                build_previous_lessons_summary(previous_lessons or []), lesson_type
+            ),
+            "language_guidance": language_prompt_overlay,
+        },
     )
     if lesson_type == "listening" and not any(
         exercise.type == "listening" for exercise in lesson.exercises
@@ -207,6 +209,7 @@ async def generate_lesson(
     return lesson
 
 
+@llm_operation()
 async def regenerate_exercise(
     *,
     cefr_level: str,
@@ -257,6 +260,12 @@ async def regenerate_exercise(
             )
     if hint_reveals_answer(exercise.native_hint, exercise.correct):
         exercise.native_hint = None
+    await review_regenerated_exercise(
+        exercise,
+        explanation=lesson_explanation or {},
+        cefr_level=cefr_level,
+        target_language=target_language,
+    )
     return exercise
 
 

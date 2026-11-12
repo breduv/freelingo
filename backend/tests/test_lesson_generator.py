@@ -80,7 +80,7 @@ class TestGenerateLesson:
         )
 
         with patch(
-            "app.services.lesson_generator.llm_adapter.structured_output",
+            "app.services.lesson_generator.generate_verified_lesson",
             AsyncMock(return_value=mock_lesson),
         ):
             result = await generate_lesson(
@@ -123,7 +123,7 @@ class TestGenerateLesson:
         )
 
         with patch(
-            "app.services.lesson_generator.llm_adapter.structured_output",
+            "app.services.lesson_generator.generate_verified_lesson",
             AsyncMock(return_value=mock_lesson),
         ):
             result = await generate_lesson(
@@ -197,7 +197,7 @@ class TestGenerateLesson:
         )
 
         with patch(
-            "app.services.lesson_generator.llm_adapter.structured_output",
+            "app.services.lesson_generator.generate_verified_lesson",
             AsyncMock(return_value=mock_lesson),
         ):
             result = await generate_lesson(
@@ -541,7 +541,7 @@ class TestGenerateLessonPreviousLessons:
         from app.services.lesson_generator import generate_lesson
 
         mock_llm = AsyncMock(return_value=self._lesson_content())
-        with patch("app.services.lesson_generator.llm_adapter.structured_output", mock_llm):
+        with patch("app.services.lesson_generator.generate_verified_lesson", mock_llm):
             await generate_lesson(
                 cefr_level="A2",
                 lesson_type="reading",
@@ -563,16 +563,23 @@ class TestGenerateLessonPreviousLessons:
                 ],
             )
 
-        prompt = mock_llm.await_args.args[0][0]["content"]
+        context = mock_llm.await_args.kwargs["context"]
+        prompt = context["previous_lessons"]
         assert "ALREADY GENERATED LESSONS OF THIS UNIT" in prompt
         assert "Wir haben ein Hotel gebucht." in prompt
+        assert "Do NOT reuse any example sentence" in prompt
+        assert context["week"] == 1 and context["day"] == 3
+        assert context["target_language"] == "German"
 
     @pytest.mark.asyncio
-    async def test_first_lesson_of_a_unit_gets_no_previous_lessons_block(self):
+    @pytest.mark.parametrize("target_language", ["de-DE", "ru-RU", "sv-SE"])
+    async def test_first_lesson_of_a_unit_gets_no_previous_lessons_block(self, target_language):
+        from app.services.language_helpers import get_language_name
         from app.services.lesson_generator import generate_lesson
+        from app.services.prompts.common import get_language_prompt_overlay
 
         mock_llm = AsyncMock(return_value=self._lesson_content())
-        with patch("app.services.lesson_generator.llm_adapter.structured_output", mock_llm):
+        with patch("app.services.lesson_generator.generate_verified_lesson", mock_llm):
             await generate_lesson(
                 cefr_level="A2",
                 lesson_type="grammar",
@@ -580,9 +587,14 @@ class TestGenerateLessonPreviousLessons:
                 week=1,
                 day=1,
                 unit_id="a2_unit_1",
-                target_language="de-DE",
+                target_language=target_language,
+                native_language="es",
             )
 
-        prompt = mock_llm.await_args.args[0][0]["content"]
-        assert "PREVIOUS_LESSONS" not in prompt
-        assert 'LESSON TYPE FOCUS — this is a "grammar" lesson:' in prompt
+        context = mock_llm.await_args.kwargs["context"]
+        assert context["previous_lessons"] == ""
+        assert 'LESSON TYPE FOCUS — this is a "grammar" lesson:' in context["lesson_type_focus"]
+        assert context["minimum_grammar_exercise_percentage"] == 70
+        assert context["language_guidance"] == get_language_prompt_overlay(target_language)
+        assert context["target_language"] == get_language_name(target_language)
+        assert context["native_language"] == "Spanish"

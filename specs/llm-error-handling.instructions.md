@@ -23,9 +23,8 @@ stream, or tool-capability failures. Rate limiting and provider unavailability s
 ## Adapter retries
 
 The adapter performs up to three adapter-level invocations with increasing delays. `_call_with_retry`
-currently retries any `LLMError`, not only transient subclasses. Anthropic disables SDK retries
-explicitly; OpenAI Responses and the Chat Completions clients do not, so three adapter invocations
-do not guarantee only three network requests.
+currently retries any `LLMError`, not only transient subclasses. The provider SDK clients disable
+SDK retries, avoiding stacked retry loops. Deadline-aware generation disables adapter retries too.
 
 The default request timeout is 120 seconds per network attempt, not an end-to-end generation limit.
 OpenAI SDK `APITimeoutError` and Python `TimeoutError` normalize to `LLMTimeoutError`. Do not document
@@ -33,7 +32,8 @@ malformed output or context overflow as non-retryable while the default implemen
 common base class.
 
 Listening and Reading call `structured_output` with an absolute monotonic deadline. This policy
-disables adapter and SDK transport retries, sets each request timeout to the remaining budget, and
+disables adapter and SDK transport retries, caps each request by both the remaining budget and the
+configured per-request timeout, and
 preserves timeout/provider exception types during JSON correction. It does not mutate shared client
 configuration or change the default retry policy of other features. The outer background-job budget
 also includes TTS and persistence and is configured by `EXERCISE_GENERATION_TIMEOUT_SECONDS`.
@@ -57,6 +57,8 @@ errors are preserved and correction can only use the remaining budget.
 
 Anthropic non-streaming responses stopped at `max_tokens` become `LLMResponseError` before downstream
 JSON parsing and retain partial content for diagnostics.
+Chat Completions responses stopped with `finish_reason=length` also become `LLMResponseError`
+before downstream JSON parsing.
 
 OpenAI Responses must have status `completed` before their text is accepted. An `incomplete` response
 raises `LLMResponseError`, including when its partial text happens to be valid JSON. Empty or
@@ -138,6 +140,13 @@ Anthropic extracts system messages into its separate system parameter, requires 
 token budget, and uses provider-specific stream/content shapes. Ollama and DeepSeek share the Chat
 Completions request path. OpenAI uses Responses with stateless native tool continuation and no
 model-name reasoning exceptions. These differences remain internal to the adapter.
+
+ChatGPT adds streamed Responses with OAuth and granted plan access; failures never switch to API-key billing.
+Provider selection, credentials and optional controls belong to `services.instructions.md`.
+
+Lesson generation and semantic repair share one deadline and configuration snapshot. Review failure
+raises `LLMResponseError` before persistence; deadline exhaustion prevents publication. Disabling
+semantic review does not restore monolithic generation. See `study-plan.instructions.md`.
 
 ## Maintenance rules
 

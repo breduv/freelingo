@@ -89,7 +89,7 @@ async def test_import_preserves_existing_cards_and_translates_only_unique_new_mi
             }
         )
     )
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", call)
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", call)
     bank = content()
     idiom = content("run out of", translation=" \u3000 ")
     provided = content("hello", translation="  mi saludo  ")
@@ -139,7 +139,7 @@ async def test_local_duplicates_reuse_a_supplied_translation_without_calling_llm
     client, test_user, db_session, plan, monkeypatch
 ):
     call = AsyncMock()
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", call)
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", call)
     response = await client.post(
         "/api/flashcards/bulk",
         headers=test_user[1],
@@ -174,7 +174,7 @@ async def test_invalid_translation_batch_returns_retryable_503_without_partial_i
     client, test_user, db_session, plan, monkeypatch, invalid
 ):
     call = AsyncMock(side_effect=[invalid, invalid, model_output("orilla", "libro")])
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", call)
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", call)
     body = payload(plan, content("hello", translation="hola"), content(), content("book"))
     response = await client.post("/api/flashcards/bulk", headers=test_user[1], json=body)
     assert response.status_code == 503
@@ -190,7 +190,7 @@ async def test_incomplete_batch_can_recover_through_structured_output_corrective
     client, test_user, db_session, plan, monkeypatch
 ):
     call = AsyncMock(side_effect=[model_output(), model_output("orilla")])
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", call)
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", call)
     response = await client.post(
         "/api/flashcards/bulk", headers=test_user[1], json=payload(plan, content())
     )
@@ -203,7 +203,7 @@ async def test_incomplete_batch_can_recover_through_structured_output_corrective
 async def test_provider_failure_never_imports_untranslated_or_partial_cards(
     client, test_user, db_session, plan, monkeypatch, error
 ):
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", AsyncMock(side_effect=error("failure")))
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", AsyncMock(side_effect=error("failure")))
     response = await client.post(
         "/api/flashcards/bulk",
         headers=test_user[1],
@@ -262,7 +262,7 @@ async def test_context_changed_during_translation_prevents_all_writes(
             await other.commit()
         return model_output("orilla")
 
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", AsyncMock(side_effect=generate))
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", AsyncMock(side_effect=generate))
     response = await client.post("/api/flashcards/bulk", headers=test_user[1], json=body)
     assert response.status_code == 409
     assert response.json()["detail"] == "flashcard_context_changed"
@@ -287,7 +287,7 @@ async def test_card_created_while_llm_runs_is_skipped_without_backfill(
             await other.commit()
         return model_output("orilla", "libro")
 
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", AsyncMock(side_effect=generate))
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", AsyncMock(side_effect=generate))
     response = await client.post(
         "/api/flashcards/bulk", headers=test_user[1], json=payload(plan, content(), content("book"))
     )
@@ -319,7 +319,7 @@ async def test_translation_deadline_cancels_provider_before_any_insert(
             raise
 
     monkeypatch.setattr(flashcard_sm2, "FLASHCARD_TRANSLATION_TIMEOUT_SECONDS", 0.05)
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", AsyncMock(side_effect=provider))
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", AsyncMock(side_effect=provider))
     async with asyncio.timeout(2):
         response = await client.post(
             "/api/flashcards/bulk",
@@ -341,7 +341,7 @@ async def test_bulk_rejects_oversized_input_before_provider_or_persistence(
     client, test_user, db_session, plan, monkeypatch, field
 ):
     call = AsyncMock()
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", call)
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", call)
     cards = (
         [content()] * (FLASHCARD_BULK_MAX_CARDS + 1)
         if field == "count"
@@ -361,7 +361,7 @@ async def test_bulk_preserves_full_content_and_bounds_only_provider_context(
     original = content("界" * 100, definition="d" * 10000, example_sentence="e" * 10000)
     translation = "語" * 255
     call = AsyncMock(return_value=model_output(translation))
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", call)
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", call)
     response = await client.post(
         "/api/flashcards/bulk", headers=test_user[1], json=payload(plan, original)
     )
@@ -386,7 +386,7 @@ async def test_bulk_accepts_maximum_batch_without_llm_when_translations_are_supp
     client, test_user, db_session, plan, monkeypatch
 ):
     call = AsyncMock()
-    monkeypatch.setattr(llm_adapter, "_call_with_retry", call)
+    monkeypatch.setattr(type(llm_adapter), "_call_with_retry", call)
     cards = [
         content(str(index), translation="provided") for index in range(FLASHCARD_BULK_MAX_CARDS)
     ]

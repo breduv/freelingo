@@ -1,5 +1,7 @@
 <div align="center">
 
+**English** · [Русский](README.ru.md)
+
 # FreeLingo
 
 [![Hosted](https://img.shields.io/badge/hosted%20service-available-green?style=flat-square)](https://freelingo.app)
@@ -21,6 +23,9 @@
 
 FreeLingo is an open-source language learning platform with a structured A1–C2 curriculum and an AI
 tutor, **Lingu**. Use the managed service or run the application on your own infrastructure.
+
+This fork of [artcc/freelingo](https://github.com/artcc/freelingo) adds browser AI settings, local ChatGPT sign-in and shorter, reviewed lesson generation.
+The hosted service below is the upstream team's separate installation.
 
 1. **Find your starting point.** Take the adaptive placement quiz or start at A1 as a beginner.
    Quiz scoring and study-plan scheduling are deterministic; the plan follows the selected language's
@@ -99,6 +104,7 @@ freelingo/
 ├── backend/                         # FastAPI (Python)
 ├── blender/                         # Lingu source model and animations
 ├── data/                            # Shared data files
+├── deploy/                          # Local gateway configuration
 ├── docs/                            # GitHub Pages landing site
 ├── frontend/                        # Next.js (React)
 ├── messages/                        # Interface translation catalogs
@@ -113,8 +119,13 @@ freelingo/
 ├── DEVELOPMENT.md                   # Local development setup
 ├── docker-compose.yml               # Production deployment
 ├── docker-compose.dev.yml           # Development deployment
+├── docker-compose.local.yml         # Local patched-image deployment overlay
+├── Dockerfile.local                 # Pinned original source + local file replacements
 ├── LICENSE                          # AGPL-3.0 licence
 ├── README.md                        # This file
+├── README.ru.md                     # Russian translation
+├── start.ps1                        # Start the local deployment on Windows
+├── stop.ps1                         # Stop it without deleting data
 └── run-dev.sh                       # Development helper script
 ```
 
@@ -125,7 +136,7 @@ freelingo/
 - **Frontend:** Next.js 16, shadcn/ui, Tailwind CSS, Zustand, next-intl
 - **Backend:** FastAPI, SQLAlchemy async, Alembic, Pydantic v2
 - **Data:** PostgreSQL 16 and Redis 7
-- **LLM:** Ollama, OpenAI, Anthropic, or DeepSeek
+- **LLM:** original Ollama, OpenAI, Anthropic and DeepSeek integrations, plus local ChatGPT plan access
 - **Speech:** Kokoro-FastAPI or OpenAI TTS; faster-whisper or OpenAI Whisper
 - **Auth:** JWT access and refresh tokens with admin/user roles
 - **Deployment:** Docker Compose
@@ -137,8 +148,8 @@ Choose **[Docker Compose](#option-a--git-clone--docker-compose)** for a command-
 
 **Server prerequisites**
 
-- Docker and Docker Compose; Git for the clone-based setup.
-- A supported cloud LLM API or [Ollama](https://ollama.com).
+- Docker and Docker Compose 2.24.4+ for the local overlay; Git for the clone-based setup.
+- OpenAI, Anthropic or DeepSeek credentials, or [Ollama](https://ollama.com); local ChatGPT sign-in is another option.
 - An NVIDIA GPU for the default local speech containers, or an OpenAI API key for cloud speech.
 - For production voice: HTTPS and reverse-proxy routing for `/ws/*`, as explained
   [below](#reverse-proxy-requirement-real-time-conversation).
@@ -152,13 +163,14 @@ disable those containers automatically.
 **1. Clone and configure**
 
 ```bash
-git clone https://github.com/artcc/freelingo.git
+git clone https://github.com/breduv/freelingo.git
 cd freelingo
 cp .env.example .env
 ```
 
-Edit `.env`: configure `DATA_PATH`, database and Redis credentials, `SECRET_KEY`, and your LLM and
-speech providers. Review the remaining settings in [.env.example](.env.example).
+Edit `.env`: configure database and Redis credentials, `SECRET_KEY`, and your LLM and speech
+providers. The local overlay uses named volumes; leave `DATA_PATH` at its template value.
+Review the remaining settings in [.env.example](.env.example).
 
 **2. Prepare the model — only when using Ollama**
 
@@ -171,11 +183,19 @@ ollama pull gemma4:e4b
 **3. Start the stack**
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
 Pending database migrations run automatically each time the backend starts.
-Open `http://localhost:3000` (or `http://<server-ip>:3000` for HTTP access from another machine).
+The separate `Dockerfile.local` downloads the pinned original source and overlays the listed local
+files. It reuses the pinned upstream backend runtime and rebuilds the frontend with the settings UI.
+Images stay local; no registry publication is required. Upstream workflows are unchanged;
+keep GitHub Actions disabled in the fork if you do not want automatic image publication or releases.
+The gateway binds loopback.
+Open `http://localhost:3000`. On Windows, `start.ps1` and `stop.ps1` use this same overlay.
+Docker must already be available; start the selected local LLM separately. Container startup does
+not guarantee that speech models have finished downloading. Data and AI settings use persistent
+volumes under a separate `freelingo-fork` Compose project; stopping preserves them.
 Production microphone access requires the HTTPS setup described below.
 
 By default, the first registered user becomes an administrator; set `FIRST_USER_IS_ADMIN=false` to
@@ -190,6 +210,10 @@ disable this behavior.
 4. Click **Deploy the stack**.
 5. Access the app at `http://<server-ip>:3000`. Database migrations run automatically when the backend starts.
 
+This unmodified-Compose path uses the original upstream images and does not include the local patches.
+Use Option A for the AI panel, ChatGPT and lesson changes. Remote Portainer deployment does not
+provide the local browser callback for ChatGPT automatically.
+
 > **Ollama on the same host:** use `OLLAMA_BASE_URL=http://host.docker.internal:11434`.
 > On Linux, if that hostname does not already resolve, add `host.docker.internal:host-gateway`
 > under the backend's `extra_hosts`. Production Compose does not include this mapping.
@@ -198,13 +222,19 @@ disable this behavior.
 
 ### AI providers
 
-- **Language model:** `LLM_PROVIDER` selects `ollama`, `openai`, `anthropic`, or `deepseek`.
+- **Language model:** `LLM_PROVIDER` selects `ollama`, `openai`, `anthropic`, `deepseek` or `chatgpt`.
   The recommended Ollama model is `gemma4:e4b`; configure another through `.env`.
+- **Browser settings:** sign in as administrator and open **Settings → AI settings**. Discover
+  models and test candidate settings before saving. Saved options take priority over `.env` for new
+  operations, without restarting. Keys are encrypted on the backend and never returned to the page.
+- **ChatGPT:** choose ChatGPT in that panel, connect the account, load models, test and save.
+  Availability and limits depend on OpenAI and the account's plan. This is one account shared by
+  the local installation, without automatic fallback to paid API billing. Speech remains separate.
 - **Speech:** `TTS_PROVIDER` and `STT_PROVIDER` are independent. Each selects `local`
   (Kokoro / faster-whisper) or `openai`. See [speech setup](#configuring-tts--stt).
 
 <details>
-<summary><strong>OpenAI and Anthropic model settings</strong></summary>
+<summary><strong>Provider and lesson settings</strong></summary>
 
 - OpenAI LLM requests use the **Responses API**, with `OPENAI_MODEL=gpt-6-luna` in `.env.example`.
   The selected model and endpoint must support Responses; a Chat Completions-only gateway is
@@ -214,6 +244,18 @@ disable this behavior.
   and `max`, subject to model support; there are no model-specific overrides.
 - Ollama and DeepSeek use Chat Completions; Anthropic uses its native API.
 - `ANTHROPIC_MAX_TOKENS` defaults to `8192` and must fit the selected model's output limit.
+- Select a provider and its model/key in the panel. Only Ollama exposes a configurable host address.
+  Timeout, output limit, temperature, reasoning and tools are handled by the selected provider's adapter.
+- Lessons always generate explanation/vocabulary and exercises separately, with bounded text,
+  key points and examples. Native help remains collapsible. Writing tasks have separate criteria.
+- Semantic review is enabled by default. A separate request to the same model checks choices
+  without seeing the answer key; ambiguous content is repaired or rejected before saving. It adds
+  requests and latency and cannot guarantee correctness. Existing lessons are not rewritten.
+- Back up encrypted AI settings together with `SECRET_KEY`. Losing/changing the secret prevents
+  decryption. ChatGPT authorization targets an exact HTTP loopback callback on `127.0.0.1`;
+  see the [official sign-in contract](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
+- The ChatGPT connection stays bound to its verified account after disconnect. Selecting a different
+  account is not currently exposed in the panel; reauthorization must use the original identity.
 
 See the [service contracts](specs/services.instructions.md) for provider behavior.
 
@@ -323,7 +365,8 @@ Remove the corresponding `kokoro` and/or `whisper` service blocks from your depl
 when using OpenAI for those services; changing the provider variables alone does not remove their
 GPU reservations.
 
-The services reuse `OPENAI_API_KEY` when OpenAI is also the LLM provider. See [.env.example](.env.example) for
+The environment `OPENAI_API_KEY` initializes OpenAI LLM and speech. A key saved in the LLM panel
+does not change speech credentials. See [.env.example](.env.example) for
 available settings and [the speech-services specification](specs/speech-services.instructions.md) for
 provider contracts.
 

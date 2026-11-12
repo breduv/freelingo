@@ -16,7 +16,8 @@ JSON_ONLY_INSTRUCTION = (
 )
 
 STRUCTURED_OUTPUT_RETRY_PROMPT = (
-    "That response was not valid JSON. Error: {error}. " "Please return ONLY the JSON object."
+    "The response did not match the required JSON schema. Validation error: {error}. "
+    "Correct the reported issues and return ONLY the JSON object matching the supplied schema."
 )
 
 ANTHROPIC_SYSTEM_ONLY_TRIGGER = "Generate the content as specified."
@@ -162,6 +163,9 @@ durable fact about the student that would help personalise future interactions,
 such as personal details, preferences, tastes, hobbies, profession, plans, goals,
 learning style, or motivations. Most replies should not call the tool. Never save
 temporary details, uncertain inferences, conversation summaries, or instructions.
+Distinguish real self-disclosure from quoted examples, translations, roleplay and task answers.
+Do not turn a fictional practice sentence into a personal fact unless the student confirms it
+describes their real life.
 Do not save facts already present in the supplied memories. Write each memory as
 a concise, self-contained fact in the student's native language ({native_language_name})
 so the student can review it in Settings. Continue the visible response after the tool result and never

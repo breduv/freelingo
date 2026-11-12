@@ -11,8 +11,12 @@ Use {target_language_name} vocabulary and spelling.
 {language_prompt_overlay}
 Word rules:
 - word must be only the core vocabulary term.
-- never include articles, gender markers, plural notes, qualifiers, parentheses, numbering, or prefixes/suffixes.
-- use lowercase, no trailing punctuation, and no extra metadata.
+- never prepend articles as metadata or add gender markers, plural notes, qualifiers, parentheses,
+  numbering, or explanatory prefixes/suffixes. Preserve words integral to a fixed expression.
+- preserve standard target-language capitalization, including German nouns and proper names;
+  otherwise use normal dictionary casing, no trailing punctuation and no extra metadata.
+- use one clear sense per card, consistently across definition, translation and example.
+- produce distinct useful terms, not duplicate cards or variants added just to meet the count.
 Return JSON:
 {{
   "flashcards": [
@@ -41,7 +45,11 @@ CONTEXT
 
 Generate a flashcard for this word. Use {target_language_name} vocabulary and spelling.
 {language_prompt_overlay}
-Word output must be only the target-language term without articles, gender markers, parentheses, qualifiers, prefixes, suffixes, or metadata.
+Use the sense actually expressed by the context, not an unrelated common meaning. Keep the example
+and translation consistent with that sense. Do not invent a context when none was supplied.
+Word output must be only the target-language term without added articles, gender markers,
+parentheses, qualifiers or explanatory metadata. Preserve standard capitalization and any words
+integral to a fixed expression; do not strip meaningful parts of the term.
 Return JSON:
 {{
   "word": "<clean target-language term>",

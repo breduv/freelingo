@@ -7,6 +7,10 @@ applyTo: "**/README.md"
 
 ## Purpose
 
+`README.md` remains the English entry point. `README.ru.md` is its Russian translation, preserving
+section order, coverage, attribution and presentation. Add reciprocal language links at the top;
+keep operational instructions and links synchronized.
+
 The README is the public entry point for users, self-hosters, and contributors. It should explain what
 FreeLingo is, how to start it, and where to find detailed documentation. It is not a release ledger,
 implementation inventory, or exhaustive operations manual.

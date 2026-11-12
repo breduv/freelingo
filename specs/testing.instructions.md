@@ -16,6 +16,16 @@ test-file inventories in this specification.
 
 ## Backend tests
 
+LLM configuration tests use temporary encrypted stores. Concurrency tests cover pinned multi-step
+options and serialized token rotation; mocked OAuth checks include browser/state binding, signed
+identity validation and disconnect invalidation. Lesson tests cover blind review coverage,
+ambiguous choices, bounded explanations and split generation with review disabled. Curriculum
+context checks retain language overlays, lesson-type ratios and previous-lesson reuse policies.
+Unsupported saved providers are rejected without conversion. The original
+provider tests remain, including native Anthropic streaming, errors and tools. ChatGPT and saved
+configuration tests supplement them. Ordinary domain
+tests disable the semantic gate unless explicitly testing it, so no provider call escapes mocks.
+
 Backend tests live in `backend/tests/` and use:
 
 - an in-memory SQLite database with fresh schema state per test;
@@ -34,6 +44,10 @@ Backend pytest enforces the configured aggregate coverage threshold. Targeted py
 that aggregate threshold unless coverage is disabled for the focused run.
 
 ## Frontend tests
+
+AI settings tests cover administrator-only loading, blank saved-key fields, testing candidate
+endpoints without saving, cancellation and recovery after failed writes. They mock backend calls;
+they do not verify live OAuth, real model access, deployed gateway routing or GPU services.
 
 Frontend tests live in `frontend/tests/`. Vitest uses jsdom and the shared `tests/setup.ts` for default
 browser/storage and Next.js mocks. Individual suites may replace those defaults when they require
@@ -98,6 +112,9 @@ mirror CI: CI does not autoformat or modify the worktree.
 
 `.github/workflows/pr-develop-checks.yml` runs quality checks for pull requests targeting `develop`.
 Pushes to `develop` and `main` trigger image-publication workflows, not this quality workflow.
+The upstream workflows are unchanged and include a changelog-driven GitHub Release job on `main`.
+GitHub Actions must remain disabled in forks that do not want these publication jobs. Local patch
+builds and runtime do not depend on Actions.
 Both quality-check jobs use GitHub-hosted `ubuntu-24.04` runners. This fixes the Ubuntu LTS series,
 while GitHub continues updating the runner image and its preinstalled tools.
 

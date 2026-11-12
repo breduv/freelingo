@@ -39,6 +39,10 @@ memories, feedback reads/mutations, and review reads/deletes.
 
 ## Authentication and destructive operations
 
+- AI settings read: `30/minute`; save: `10/minute`; candidate model discovery: `20/minute`.
+- AI test inference and ChatGPT connect/disconnect: `5/minute` each.
+- ChatGPT browser bootstrap and callback: `10/minute` each; legacy `/llm` redirect: `60/minute`.
+
 - `POST /api/auth/register`: `5/minute`.
 - `POST /api/auth/login`: `10/minute`.
 - `POST /api/auth/resend-verification`: `3/minute`.

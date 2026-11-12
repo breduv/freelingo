@@ -23,6 +23,43 @@ Ollama is not a Compose service. The default configuration expects it on the hos
 deployments using host-based Ollama must provide resolution for that hostname, for example through
 `host.docker.internal:host-gateway` in the backend service's `extra_hosts`.
 
+## Local source-built deployment
+
+Merge `docker-compose.yml` with `docker-compose.local.yml` using Compose 2.24.4 or later. The overlay
+uses the `freelingo-fork` project name, removes fixed container names, and uses persistent named
+volumes. Both services build targets of the separate root `Dockerfile.local`.
+
+The `patched-source` stage downloads the original repository at the immutable `UPSTREAM_REF` commit
+and copies only the explicitly listed local replacement files into that source tree. The backend
+target uses a digest-pinned upstream backend runtime, installs the pinned requirements (including
+OAuth encryption support), then replaces application and migration files from the patched source.
+The frontend target rebuilds the original frontend with the settings-page/catalog replacements;
+compiled Next.js assets cannot be updated by copying TypeScript into a published runner image.
+
+Keep the pinned source revision and `UPSTREAM_BACKEND_IMAGE` aligned when upgrading upstream. Builds
+need network access for the original archive, images and packages. Images remain local; no fork GHCR
+namespace or publication workflow is required. Upstream service Dockerfiles, workflows, production
+Compose and development Compose remain original. Local builds do not invoke GitHub Actions; fork
+owners who do not want automatic image publication or releases must leave Actions disabled.
+Production Compose alone still selects the original upstream images without these local patches.
+`gateway` binds only `127.0.0.1:3000`, routes API/OAuth and WebSockets to backend and normal pages to
+frontend, and preserves long inference timeouts. Upstream names use Docker DNS re-resolution.
+OAuth bootstrap/callback access logs are disabled, as are backend access logs in this local mode.
+The internal port 9000 adapts Whisper's root redirect to the backend's readiness check. The local
+speech configuration uses NVIDIA GPU images. Whisper inherits its image, model and engine settings
+from upstream Compose without local device, quantization or model-cache overrides.
+
+The overlay fixes local application, cookie/CORS and loopback callback URLs. ChatGPT sign-in targets
+the machine running the gateway; it is not a remote multi-user OAuth deployment. The native panel
+is served by Next.js and uses backend administrator APIs. See `services.instructions.md` for the
+configuration and credential contract. Back up the encrypted AI volume together with `SECRET_KEY`,
+in addition to application data. Changing/removing volumes is never part of stop.
+
+`start.ps1` builds/starts this overlay from its own directory and reports container startup, not
+provider/model readiness. Docker must already be available; selected local LLMs must be running.
+`stop.ps1` stops this project's containers without deleting volumes or stopping shared Docker/Ollama.
+Neither helper installs dependencies or modifies another deployment.
+
 ## Development topology
 
 `docker-compose.dev.yml` defines PostgreSQL, Redis, a locally built backend with source mount and
@@ -62,7 +99,9 @@ their preinstalled tools. Container base images remain defined by the Dockerfile
 
 ## Persistence
 
-The Compose files use bind mounts below `DATA_PATH`; they do not declare named volumes.
+The original production/development Compose files use bind mounts below `DATA_PATH`; they do not
+declare named volumes. The local overlay replaces these mounts with named volumes, so `start.ps1`
+does not use `DATA_PATH` for storage. Keep the template value for base-file variable interpolation.
 
 - PostgreSQL: `${DATA_PATH}/postgres`.
 - Redis: `${DATA_PATH}/redis`.
@@ -83,6 +122,12 @@ Both Compose files forward optional `OPENAI_REASONING_EFFORT` with an empty defa
 `reasoning.effort` on OpenAI Responses requests only; nonempty values must be supported by the selected
 model. An empty value leaves reasoning to the provider. `LLM_PROVIDER=openai` requires a model and
 endpoint supporting Responses, not only Chat Completions.
+
+The original production/development Compose files forward their original provider fields. The local
+overlay alone forwards additional ChatGPT, request-timeout and lesson-quality options.
+It sets `LLM_CONFIG_PATH=/data/llm/settings.json` and persists that path in a named volume. The supported
+fork deployment uses this overlay; development files retain upstream configuration. Saved administrator
+options override environment defaults; provider and credential rules belong to `services.instructions.md`.
 
 Both Compose files forward `EXERCISE_GENERATION_TIMEOUT_SECONDS` with a default of 600. This positive
 integer limits the complete Listening/Reading background job, including LLM output, JSON correction,

@@ -5,6 +5,21 @@ applyTo: "backend/app/core/**, backend/app/routers/{auth,assessment,chat,config,
 
 # Platform Core
 
+## Administrator AI configuration
+
+Administrators access `/settings/ai` through the Settings page. The panel uses the existing
+`apiFetch`, memory-only access tokens and rotating-refresh coordination. All configuration,
+model-discovery, test-inference and ChatGPT connection APIs enforce `require_admin`; hiding the card
+is presentation only. These settings are shared by the installation, independently of users'
+language tracks and per-user settings.
+
+ChatGPT is a separate local provider OAuth connection. One-use Redis transactions, PKCE, nonce and
+an HTTP-only loopback cookie bind sign-in to its administrator-initiated browser attempt. Callback
+completion checks that the initiating administrator is still active. External tokens never serve
+as FreeLingo access tokens. The existing account, refresh and resource-ownership rules remain
+authoritative. Provider identity, storage, refresh and revocation contracts are owned by
+`services.instructions.md`; HTTP paths by `api-endpoints.instructions.md`.
+
 ## Purpose and boundaries
 
 FreeLingo coordinates account creation, onboarding, CEFR placement, study-plan entry, learning

@@ -172,6 +172,40 @@ is before `progress_day`. Ungenerated slots cannot be pending because no lesson 
 `GET /api/study-plan/lessons` returns lightweight metadata for every persisted lesson in the active
 plan. It does not generate content, auto-advance, or mutate completion.
 
+## Split generation and quality gate
+
+New lessons always generate a bounded explanation/vocabulary outline, then a separate exercise
+batch. Writing tasks use an additional schema with grading criteria mapped to persisted `options`.
+The exercise prompt requests progressive practice of the outline's main taught skills, ending in
+an integrated productive task where compatible with the lesson type. Writing refinement receives
+the full outline, preceding questions/options, final-task status and review feedback so it does not
+discard that progression. Prompt composition and coverage rules belong to `prompts.instructions.md`.
+All stages take the same required context: curriculum, CEFR, target/native language, week/day,
+lesson-type focus, grammar exercise share and prior-unit history with its reuse policy. There is no
+alternate full-lesson generation path. One configuration snapshot and the
+`EXERCISE_GENERATION_TIMEOUT_SECONDS` budget cover generation, JSON correction, and review/repair.
+
+The outline limits text to 1200 characters, 1-4 short key points and 1-3 examples; each point is at
+most 240 characters. These are validation ceilings rather than a requested explanation length;
+prompts assign purpose/context to text, rules to key points and application to examples, avoiding
+repeated explanations across those fields without forcing a two- or three-sentence introduction.
+Lesson-type passages and models remain in text. Native support is required when a native language
+is supplied and has at most two traps and four glossary entries. The existing frontend renders
+points/examples separately and keeps native support behind its disclosure. Legacy JSON stays readable.
+Vocabulary definitions/notes are capped at 240 characters and examples at 400, preventing lengthy
+explanations from moving into the vocabulary section instead.
+
+`LESSON_QUALITY_REVIEW` (default true) or saved `verify_lessons` enables a blind request to the same
+model. The reviewer receives no choice answer keys or answer explanations. Coverage must include
+every exercise and choice option exactly once; each choice needs exactly one independently valid
+option matching the author's key. Full-lesson review also checks that main taught skills have
+corresponding learner actions and that the sequence supplies the requested integrated practice.
+Reported issues, ambiguity or disagreement trigger regeneration up to `LESSON_QUALITY_MAX_ATTEMPTS`
+within the same deadline. Failure prevents persistence. Individual replacements also pass review
+before saving. Disabling review leaves split
+generation and structural validation active. Existing lessons/answers are never rewritten by a
+configuration change. Semantic review costs additional requests and cannot establish factual truth.
+
 ## Lesson persistence
 
 A lesson row is unique by `(study_plan_id, week_number, day_number, title)`. Exercises belong to the

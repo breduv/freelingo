@@ -1,0 +1,62 @@
+# Local patch build only; upstream service Dockerfiles remain unchanged.
+# Keep the source revision and backend runtime aligned when updating upstream.
+ARG UPSTREAM_BACKEND_IMAGE=ghcr.io/artcc/freelingo-backend@sha256:2361323bb9e0d423557b86d5cad693354472f3ae6f26cec6f9099657d5967c62
+
+FROM node:26.13.0-alpine AS patched-source
+ARG UPSTREAM_REF=00d5aa4eac8d138b7a919b74ff78992ecf1a31f1
+WORKDIR /upstream
+ADD https://github.com/artcc/freelingo/archive/${UPSTREAM_REF}.tar.gz /tmp/upstream.tar.gz
+RUN tar -xzf /tmp/upstream.tar.gz --strip-components=1 -C /upstream && rm /tmp/upstream.tar.gz
+
+# Only these local files replace/add to the pinned original source.
+COPY backend/app/core/config.py /upstream/backend/app/core/config.py
+COPY backend/app/main.py /upstream/backend/app/main.py
+COPY backend/app/schemas/lessons.py /upstream/backend/app/schemas/lessons.py
+COPY backend/app/routers/llm_settings.py /upstream/backend/app/routers/llm_settings.py
+COPY backend/app/services/llm_adapter.py backend/app/services/llm_config.py backend/app/services/chatgpt_auth.py backend/app/services/lesson_quality.py backend/app/services/lesson_generator.py /upstream/backend/app/services/
+COPY backend/app/services/prompts/lesson.py /upstream/backend/app/services/prompts/lesson.py
+COPY backend/app/services/prompts/tutor.py /upstream/backend/app/services/prompts/tutor.py
+COPY backend/app/services/prompts/assessment.py backend/app/services/prompts/comprehension.py backend/app/services/prompts/flashcards.py backend/app/services/prompts/grammar.py backend/app/services/prompts/vocabulary.py backend/app/services/prompts/phrasebook.py backend/app/services/prompts/common.py /upstream/backend/app/services/prompts/
+COPY backend/requirements.txt backend/constraints.txt /upstream/backend/
+COPY ["frontend/src/app/(app)/settings/page.tsx", "/upstream/frontend/src/app/(app)/settings/page.tsx"]
+COPY ["frontend/src/app/(app)/settings/ai/page.tsx", "/upstream/frontend/src/app/(app)/settings/ai/page.tsx"]
+COPY messages/ /upstream/messages/
+
+FROM ${UPSTREAM_BACKEND_IMAGE} AS backend
+WORKDIR /app
+COPY --from=patched-source /upstream/backend/requirements.txt /upstream/backend/constraints.txt ./
+# Existing pins are retained; the OAuth/encryption dependency must also be installed.
+RUN python -m pip install --no-cache-dir -r requirements.txt
+COPY --from=patched-source /upstream/backend/app ./app
+COPY --from=patched-source /upstream/backend/alembic ./alembic
+COPY --from=patched-source /upstream/backend/alembic.ini ./alembic.ini
+
+FROM node:26.13.0-alpine AS frontend-deps
+WORKDIR /app
+RUN npm install -g npm@11.20.0
+COPY --from=patched-source /upstream/frontend/package.json /upstream/frontend/package-lock.json ./
+COPY --from=patched-source /upstream/frontend/scripts ./scripts
+RUN npm ci
+
+FROM node:26.13.0-alpine AS frontend-builder
+WORKDIR /app
+COPY --from=frontend-deps /app/node_modules ./node_modules
+COPY --from=patched-source /upstream/frontend/ ./
+COPY --from=patched-source /upstream/messages/ ./messages/
+RUN node scripts/copy-vad-models.js
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM node:26.13.0-alpine AS frontend
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+COPY --from=frontend-builder /app/public ./public
+COPY --from=frontend-builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=frontend-builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+USER nextjs
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+CMD ["node", "server.js"]
