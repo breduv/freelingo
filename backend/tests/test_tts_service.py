@@ -1,16 +1,51 @@
 import hashlib
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
-
 from app.core.config import settings
 from app.data.phrasebook import get_phrasebook_categories
 from app.main import app
 from app.models.conversation import Conversation
 from app.routers import tts as tts_router
-from app.services.tts_service import OpenAITTSService
+from app.services.tts_service import KokoroTTSService, OpenAITTSService
+
 from tests.conftest import make_study_plan
+
+
+async def test_local_sends_resource_language_and_ignores_stale_cloud_voice(monkeypatch, tmp_path):
+    mapping = tmp_path / "voices.json"
+    mapping.write_text(json.dumps({"en-GB": "bf_emma", "ru": "rf_masha"}))
+    monkeypatch.setenv("KOKORO_VOICES_FILE", str(mapping))
+    requests = []
+
+    def respond(request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(200, content=b"ID3local")
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx, "AsyncClient", lambda: original_client(transport=httpx.MockTransport(respond))
+    )
+    service = KokoroTTSService("http://kokoro:8880", "af_heart")
+    assert await service.synthesize("  Hello!  ", "nova", language="en-GB") == b"ID3local"
+    assert requests[0]["language"] == "en-GB"
+    assert requests[0]["voice"] is None
+    assert requests[0]["input"] == "Hello!"
+
+
+def test_local_caches_separate_region_and_live_voice_mapping(monkeypatch, tmp_path):
+    mapping = tmp_path / "voices.json"
+    mapping.write_text(json.dumps({"ru": "rf_masha"}))
+    monkeypatch.setenv("KOKORO_VOICES_FILE", str(mapping))
+    service = KokoroTTSService("http://kokoro:8880", "af_heart")
+    original = service.get_cache_key("Hello", language="en-GB")
+    assert original != service.get_cache_key("Hello", language="en-US")
+    assert original == service.get_cache_key("Hello", "nova", language="en-GB")
+    mapping.write_text(json.dumps({"ru": "rf_sveta"}))
+    assert original != service.get_cache_key("Hello", language="en-GB")
 
 
 @pytest.fixture

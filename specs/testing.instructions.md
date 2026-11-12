@@ -63,6 +63,13 @@ configurations retain application type checking.
 
 ## Commands
 
+The local Kokoro image has model-free routing and HTTP contracts in
+`deploy/kokoro/test_routing.py`. After building it, run
+`docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm --no-deps kokoro python -m unittest -v test_routing`.
+These checks do not download weights or establish pronunciation quality. Runtime verification uses
+real Russian/German/English and mixed-language audio separately; ASR round trips establish neither
+naturalness nor accent quality. Backend adapter/cache tests remain in `tests/test_tts_service.py`.
+
 Local setup is `./scripts/bootstrap.sh`. Exact runtimes and archive SHA-256 checksums are committed in
 `scripts/toolchain.env`. The bootstrap installs standalone Python and Node with bundled npm under
 `.local/`, creates `.venv` from that Python, installs pinned runtime/development requirements and uses

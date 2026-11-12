@@ -49,14 +49,29 @@ The internal port 9000 adapts Whisper's root redirect to the backend's readiness
 speech configuration uses NVIDIA GPU images. Whisper inherits its image, model and engine settings
 from upstream Compose without local device, quantization or model-cache overrides.
 
+The overlay builds `kokoro` from the `kokoro` target of `Dockerfile.local`, deriving from a
+digest-pinned Kokoro GPU image and installing only its pinned extra speech dependencies. The app
+backend runtime and dependency files do not gain these packages. `deploy/kokoro/server.py` serves
+port 8880 as the image's command; no live container patching or helper script is required.
+The non-root image creates `/data/models` with its application user's ownership before mounting.
+The `kokoro-models` named volume retains pinned Kokoro, Russian/German and RUAccent downloads.
+The initial start may take several minutes; the readiness check has a 15-minute startup period.
+Subsequent starts reuse cached weights; interrupted downloads resume. GPU execution uses
+`KOKORO_DEVICE=cuda`; CPU deployment also needs its GPU reservation removed and device set to `cpu`.
+The canonical language/default-voice file is `deploy/kokoro/voices.json`, mounted read-only in both
+Kokoro and backend. Both reread it per request, so edits need no restart and invalidate new cache
+lookups. See `speech-services.instructions.md` for language routing and model limitations.
+
 The overlay fixes local application, cookie/CORS and loopback callback URLs. ChatGPT sign-in targets
 the machine running the gateway; it is not a remote multi-user OAuth deployment. The native panel
 is served by Next.js and uses backend administrator APIs. See `services.instructions.md` for the
 configuration and credential contract. Back up the encrypted AI volume together with `SECRET_KEY`,
 in addition to application data. Changing/removing volumes is never part of stop.
 
-`start.ps1` builds/starts this overlay from its own directory and reports container startup, not
-provider/model readiness. Docker must already be available; selected local LLMs must be running.
+The canonical launch is `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build`.
+`start.ps1` remains an optional wrapper with a 180-second Compose readiness budget. The first Kokoro
+download may exceed that budget while its container continues initializing; subsequent warm starts
+reuse the cache. Docker must already be available; selected local LLMs must be running.
 `stop.ps1` stops this project's containers without deleting volumes or stopping shared Docker/Ollama.
 Neither helper installs dependencies or modifies another deployment.
 

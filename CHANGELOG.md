@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Added
 
+- A Compose-built Kokoro service with pinned Russian and German models, automatic language/voice
+  routing, mixed-language speech and persistent model downloads. Voice mappings can change without
+  restarting containers.
 - Administrator AI settings in the browser, reachable from Settings, with candidate model discovery
   and connection testing, encrypted persistent credentials and local ChatGPT account authorization.
 - A separate local Dockerfile that overlays selected files on pinned original source, with an

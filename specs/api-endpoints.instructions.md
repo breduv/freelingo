@@ -439,6 +439,12 @@ are server-triggered by persisted activity and have no client-claim endpoint.
 
 ## TTS — `/api/tts`
 
+The local overlay's Kokoro adapter passes the resolved resource language to the speech service;
+that service chooses configured voices and routes mixed-language spans without translating them.
+The supported languages, detection limits and hot-reloaded voice map belong to
+`speech-services.instructions.md`. Local narration/phrasebook cache keys cover this map and routing
+revision; unsupported local speech does not fall back to a paid provider.
+
 Requests with `conversation_id` convert the supplied text from Markdown to plain spoken content
 after validating ownership and resolving the persisted language. They omit presentation markers,
 preserve words and block boundaries, and return `422` if no speakable content remains. Plan-only and

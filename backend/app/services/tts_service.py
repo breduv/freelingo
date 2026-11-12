@@ -1,6 +1,8 @@
 import hashlib
 import json
+import os
 import time
+from pathlib import Path
 
 import httpx
 import openai
@@ -12,6 +14,8 @@ logger = get_logger(__name__)
 
 
 class KokoroTTSService:
+    model = "kokoro-ru-de-v1"
+
     def __init__(self, base_url: str, voice: str) -> None:
         self.base_url = base_url
         self.voice = voice
@@ -22,23 +26,49 @@ class KokoroTTSService:
             r = await client.get(f"{self.base_url}/v1/models", timeout=5.0)
             r.raise_for_status()
 
+    def get_cache_key(
+        self, text: str, voice: str | None = None, language: str | None = None
+    ) -> str:
+        path = Path(os.getenv("KOKORO_VOICES_FILE", "/etc/kokoro/voices.json"))
+        identity = {
+            "text": text,
+            "locale": language,
+            "provider": "local",
+            "model": self.model,
+            "voice": self.voice,
+            "voices": json.loads(path.read_text()) if path.is_file() else None,
+            "format": "mp3",
+        }
+        return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+
     async def synthesize(
         self, text: str, voice: str | None = None, language: str | None = None
     ) -> bytes:
         """Call Kokoro-FastAPI and return MP3 audio bytes."""
-        _ = language  # Kokoro handles language via the voice model itself
+        text = text.strip()
+        if not text:
+            return b""
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.base_url}/v1/audio/speech",
                 json={
                     "model": "kokoro",
                     "input": text,
-                    "voice": voice or self.voice,
+                    "voice": (
+                        None
+                        if Path(
+                            os.getenv("KOKORO_VOICES_FILE", "/etc/kokoro/voices.json")
+                        ).is_file()
+                        else self.voice
+                    ),
+                    "language": language,
                     "response_format": "mp3",
                 },
-                timeout=30.0,
+                timeout=60.0,
             )
             response.raise_for_status()
+            if not response.content:
+                raise RuntimeError("Kokoro returned empty audio")
             return response.content
 
 

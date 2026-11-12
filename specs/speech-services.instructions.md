@@ -20,7 +20,9 @@ TTS configuration:
 
 - `TTS_PROVIDER=local` selects Kokoro; `openai` selects OpenAI TTS.
 - `TTS_BASE_URL` defaults to `http://kokoro:8880`.
-- `TTS_VOICE` defaults to `af_heart` for Kokoro.
+- `TTS_VOICE` defaults to `af_heart` for legacy Kokoro deployments. The local overlay mounts
+  `deploy/kokoro/voices.json` at `/etc/kokoro/voices.json` in backend and TTS; its per-language
+  defaults take precedence and are reread for each request.
 - `OPENAI_TTS_MODEL` defaults to `tts-1` in backend `Settings`. Both Compose files instead supply
   `gpt-4o-mini-tts` when the operator omits the variable; this model is used when `TTS_PROVIDER=openai`.
 - `OPENAI_TTS_VOICE` defaults to `nova`.
@@ -47,12 +49,40 @@ not expose provider credentials or the selected STT provider.
 `KokoroTTSService`:
 
 - checks health with `GET {base_url}/v1/models` and a five-second timeout;
-- synthesizes with `POST {base_url}/v1/audio/speech` and a 30-second timeout;
+- synthesizes with `POST {base_url}/v1/audio/speech` and a 60-second timeout;
 - sends model `kokoro`, text, voice, and MP3 response format;
-- uses the requested voice or configured `TTS_VOICE`;
+- sends the persisted resource language in `language`, retaining BCP-47 English region;
+- ignores stale OpenAI voice preferences; with the mounted mapping, the speech service selects voices;
+  without it, sends the legacy configured `TTS_VOICE`;
 - raises on non-success HTTP responses;
-- returns response bytes without validating that they contain a non-empty MP3;
-- accepts a language argument but does not use it.
+- trims input, returns empty bytes for empty text and rejects an empty audio response;
+- hashes routing revision, text, locale, configured voice and the full voice mapping for caches.
+
+Changes to model revisions or segmentation rules require updating `KokoroTTSService.model` so
+previous audio does not satisfy the new routing contract.
+
+`deploy/kokoro/` implements the local overlay's OpenAI-compatible speech subset: models, voices and
+non-streaming speech in MP3/WAV. Its single process serves the stock Kokoro checkpoint, the Russian
+`zaakirio/kokoro-ru` female checkpoint (Masha/Sveta), and German Kikiri Martin. Model sources and
+Russian G2P code are pinned by immutable repository revision in `assets.py`; the base image and
+additional packages are pinned in `Dockerfile.local` and `deploy/kokoro/requirements.txt`.
+RUAccent runs on CPU with pinned persistent model/dictionary assets. Model loading completes before
+the server accepts requests, so `/v1/models` is also the Compose readiness check. Inference is serial.
+
+Voice defaults are in `voices.json`; `KOKORO_VOICES_FILE` can override the mounted path. English
+defaults to British Emma unless the context is explicitly `en-US`; US English uses Heart. Russian
+uses Masha and German Martin. Portuguese uses the Brazilian checkpoint for both regional contexts.
+The file must contain the complete supported-language mapping, with voices for matching languages.
+Changes apply to subsequent requests without restart; existing Listening recordings are unchanged.
+
+Mixed speech is split at script boundaries and sentence-level Latin-language evidence using local
+langid, preserving original text and order. Ambiguous Latin fragments shorter than three words keep
+the primary resource language when Latin, otherwise use British English. Japanese kana disambiguates
+kanji from Chinese; the explicit Japanese context also does so. Detection is approximate, especially
+for names, short phrases and switches within a Latin-script sentence. Text is never translated.
+PCM fragments are concatenated before a single final MP3/WAV encoding. Speaker changes are expected.
+Unsupported contexts/scripts fail with 422 from the speech service rather than using English.
+Polish, Dutch, Swedish, Korean and Romanian/Croatian narration are not supported locally.
 
 ### OpenAI
 
@@ -80,8 +110,8 @@ use ISO `pt` for STT; their full locale remains distinct for TTS instructions an
 `en`/`en-GB` requests British pronunciation, and `en-US` requests American pronunciation. Without a
 language argument, instructions do not impose a regional accent. Conversation, Listening, and
 Phrasebook supply their full target-language code; the tour supplies its UI locale. Legacy models
-and Kokoro ignore this language argument. Model instructions do not alter the input text or select
-a different voice.
+ignore this language argument. Local Kokoro uses it for routing instead. Model instructions do not
+alter the input text or select a different OpenAI voice.
 
 Each supported language has focused pronunciation guidance for vowel and consonant quality, rhythm,
 stress, and relevant tonal/pitch distinctions. It asks for everyday native articulation without
@@ -90,7 +120,8 @@ to any selected voice, preserving its vocal identity. `nova` is the configured d
 voice; user preferences continue to take precedence. These instructions guide the model rather than
 guaranteeing accent quality for every voice or text.
 
-Neither current TTS adapter chooses a model or voice automatically from the target language.
+The local Kokoro service selects its model and voice from the resolved language; OpenAI voice
+selection remains independent of language.
 
 ## STT adapters
 
@@ -162,9 +193,10 @@ There is no implicit English fallback.
   sends it as `text` in the JSON request body. The backend validates text length (1–5000 characters;
   invalid or missing text returns `422`) and synthesizes that supplied text.
 - An optional JSON `voice` selects a supported OpenAI voice (`400` for an invalid selection).
-  Omission uses the configured default. Kokoro always uses its configured default, ignoring client voice preferences.
+  Omission uses the configured default. Kokoro ignores client voice preferences and uses the
+  configured local mapping for the UI locale.
   Locale follows the interface, not the learned language, and supplies pronunciation guidance when
-  the configured OpenAI model supports instructions.
+  the configured OpenAI model supports instructions; local Kokoro uses it for language routing.
 - `services/tour_audio.py` stores shared MP3 files at
   `{AUDIO_STORAGE_PATH}/tour/{locale}/{sha256}.mp3`. The hash includes the exact text, locale,
   effective provider/model/voice/speed, output format, and instructions when supported. Requests never
@@ -289,8 +321,8 @@ Persistent MP3 uses include:
 - Dashboard tour: `{AUDIO_STORAGE_PATH}/tour/{locale}/{sha256}.mp3`.
 
 For instruction-capable OpenAI models, Phrasebook uses a synthesis hash covering text, language,
-model, voice, speed, format, and instructions. Other providers/models retain the category/phrase/text
-cache identity. Phrasebook responses use `Cache-Control: no-store` because their public URL does not
+model, voice, speed, format, and instructions. Kokoro uses its language/mapping/routing synthesis hash.
+Other models retain the category/phrase/text cache identity. Phrasebook responses use `Cache-Control: no-store` because their public URL does not
 identify the synthesis settings. Tour, Phrasebook, and voice-preview audio is generated on demand for a new key, leaving
 previous files intact. Listening recordings remain attached to their exercises and are not regenerated
 by model or prompt changes. A provider-side update behind a model alias does not change cache keys.

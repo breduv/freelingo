@@ -186,6 +186,11 @@ ollama pull gemma4:e4b
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
+Compose also builds the extended Kokoro image. Its first start downloads the pinned models and
+Russian pronunciation data into `kokoro-models`; this can take several minutes. The service becomes
+healthy after loading its models. No manual package installation, model copying or PowerShell script
+is required. Subsequent starts reuse the model volume.
+
 Pending database migrations run automatically each time the backend starts.
 The separate `Dockerfile.local` downloads the pinned original source and overlays the listed local
 files. It reuses the pinned upstream backend runtime and rebuilds the frontend with the settings UI.
@@ -341,12 +346,25 @@ TTS_PROVIDER=local
 STT_PROVIDER=local
 ```
 
-The default Kokoro voice is `af_heart`. FreeLingo does not automatically select a Kokoro voice from
-the study language. OpenAI TTS supports the language-aware pronunciation guidance described in the
-[speech specification](specs/speech-services.instructions.md).
+The local overlay extends Kokoro with [Russian](https://huggingface.co/zaakirio/kokoro-ru) and
+[German](https://huggingface.co/kikiri-tts/kikiri-german-martin) model weights. It selects voices from
+`deploy/kokoro/voices.json`: British English uses Emma, US English Heart, Russian Masha and German
+Martin. Russian Sveta is also available. The other original Kokoro languages remain supported.
+The upstream model releases retain their published licenses; the Russian weights use OpenRAIL.
 
-For CPU-only local deployment, select CPU images, remove GPU reservations, and use a smaller Whisper
-model as documented in [the Docker specification](specs/docker.instructions.md).
+Edit the voice mapping to change a language's default without rebuilding or restarting the services.
+Compose mounts the same file in the backend and Kokoro; narration and phrasebook cache keys include
+its contents. Mixed-language text is spoken in its original order without translation. Script changes
+are detected directly; Latin-language changes use a local classifier and are approximate for short
+or ambiguous phrases. Switching languages may switch speakers. Portuguese uses the Brazilian model.
+Polish, Dutch, Swedish and Korean, and Romanian/Croatian tour narration, remain unsupported locally.
+
+This extension belongs to the local overlay; the unmodified Compose path keeps upstream Kokoro.
+OpenAI TTS remains available; see the [speech specification](specs/speech-services.instructions.md).
+
+For CPU-only local deployment, set the Kokoro service's `KOKORO_DEVICE` to `cpu`, remove GPU
+reservations, and select a CPU Whisper image with a smaller model as documented in
+[the Docker specification](specs/docker.instructions.md).
 
 ### Cloud speech
 

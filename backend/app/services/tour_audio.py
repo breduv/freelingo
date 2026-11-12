@@ -2,8 +2,6 @@
 
 import asyncio
 import fcntl
-import hashlib
-import json
 import os
 import tempfile
 from pathlib import Path
@@ -25,19 +23,7 @@ async def get_tour_audio(
 ) -> Path:
     is_openai = isinstance(service, OpenAITTSService)
     effective_voice = (voice or service.voice) if is_openai else service.voice
-    if is_openai:
-        key = service.get_cache_key(text, effective_voice, locale)
-    else:
-        identity = {
-            "text": text,
-            "locale": locale,
-            "provider": "local",
-            "model": "kokoro",
-            "voice": effective_voice,
-            "speed": 1.0,
-            "format": "mp3",
-        }
-        key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    key = service.get_cache_key(text, effective_voice, locale)
     directory = Path(settings.AUDIO_STORAGE_PATH) / "tour" / locale
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{key}.mp3"

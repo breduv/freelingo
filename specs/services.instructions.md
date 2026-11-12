@@ -222,9 +222,11 @@ and the voice pipeline continue supplying their existing text.
 `tts_service.py` exposes `synthesize(text, voice=None, language=None) -> bytes` through local Kokoro or
 OpenAI. OpenAI supplies shared native-pronunciation instructions for `gpt-4o-mini-tts` and its snapshots,
 using the supplied language/region when available and requesting language inference otherwise.
-Legacy/unknown OpenAI models and Kokoro ignore `language` and receive no pronunciation instructions.
-Voice selection remains independent of language. OpenAI synthesis cache keys include instructions
-only when supported by the configured model.
+Legacy/unknown OpenAI models ignore `language` and receive no pronunciation instructions.
+Local Kokoro receives the resource language and routes supported language spans to stock, Russian
+or German checkpoints and configured voices. Its cache identity covers language, routing revision
+and the live voice mapping. OpenAI synthesis cache keys include instructions only when supported
+by the configured model. The owning local speech contract is `speech-services.instructions.md`.
 
 `stt_service.py` exposes
 `transcribe(audio_bytes, filename, mime_type, *, language) -> str` through local faster-whisper or

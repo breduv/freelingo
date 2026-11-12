@@ -136,7 +136,7 @@ definiteness before subordinate word order, tense perspective and advanced disco
 content preserves V2, negation scope, reflexive reference and register without rejecting valid regional
 or conversational alternatives. Shared speech guidance requests Swedish vowel quality, length
 contrasts, pitch accents and natural phrasing. OpenAI speech and Whisper support Swedish; the
-English-only Kokoro voice configuration is not suitable for this target language.
+local Kokoro does not currently include a Swedish checkpoint.
 
 Comprehension length guidance uses characters for Japanese and Mainland Chinese and words for the
 other current languages, including Polish, Russian and Swedish.
@@ -152,9 +152,11 @@ implicit English default inside either STT adapter.
 
 TTS accepts a full BCP-47 language argument. OpenAI `gpt-4o-mini-tts` and its snapshots use it for
 native regional pronunciation instructions; without context, instructions request language inference
-without imposing a regional accent. Legacy/unknown OpenAI models and Kokoro ignore this argument.
-Model and voice selection remain configured independently of the target language. Provider and
-resource-owned language contracts are defined in `speech-services.instructions.md`.
+without imposing a regional accent. Legacy/unknown OpenAI models ignore this argument. The local
+Kokoro overlay uses it as language context and selects configured voices/checkpoints for supported
+language spans. OpenAI voice selection remains independent of the target language. Provider,
+supported-language, detection and resource-owned language contracts are defined in
+`speech-services.instructions.md`.
 
 ## Validation boundaries
 

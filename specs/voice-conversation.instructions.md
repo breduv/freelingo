@@ -74,7 +74,9 @@ reference, even when another language has an active plan. It does not create a l
 The pipeline converts the resolved target language to ISO 639-1 and declares it in every STT call.
 TTS receives the full resolved BCP-47 target language so regional distinctions such as `en-GB` and
 `en-US` remain available. OpenAI uses it in pronunciation instructions for `gpt-4o-mini-tts` and its
-snapshots; legacy/unknown OpenAI models and Kokoro ignore it.
+snapshots; legacy/unknown OpenAI models ignore it. Local Kokoro uses it as primary language context
+and switches model/voice for detected foreign-language spans; detection limits and supported
+languages are owned by `speech-services.instructions.md`.
 
 ### Lesson practice context
 

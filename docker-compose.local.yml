@@ -38,6 +38,7 @@ services:
       - audio-local:/data/audio
       - previews-local:/app/tts_previews
       - llm-local:/data/llm
+      - ./deploy/kokoro/voices.json:/etc/kokoro/voices.json:ro
 
   frontend:
     container_name: !reset null
@@ -51,7 +52,23 @@ services:
 
   kokoro:
     container_name: !reset null
-    image: ghcr.io/remsky/kokoro-fastapi-gpu:latest
+    image: freelingo-fork-kokoro:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      target: kokoro
+    environment:
+      KOKORO_DEVICE: cuda
+    volumes:
+      - kokoro-models:/data/models
+      - ./deploy/kokoro/voices.json:/etc/kokoro/voices.json:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8880/v1/models', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      start_period: 15m
+      retries: 4
 
   whisper:
     container_name: !reset null
@@ -74,3 +91,4 @@ volumes:
   audio-local:
   previews-local:
   llm-local:
+  kokoro-models:

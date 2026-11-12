@@ -169,6 +169,11 @@ specifications.
 
 ## Related specifications
 
+The local Compose overlay also builds a separate Kokoro runtime from `Dockerfile.local`.
+Its model loading, G2P and language routing remain outside the application backend interpreter;
+`tts_service.py` is the backend gateway. See `speech-services.instructions.md` and
+`docker.instructions.md` for the canonical contract and deployment.
+
 - `architecture.instructions.md`: system boundaries and cross-system flows.
 - `database-models.instructions.md`: persistence contracts.
 - `services.instructions.md`: service interfaces and effects.
