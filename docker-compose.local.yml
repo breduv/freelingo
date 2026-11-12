@@ -30,8 +30,6 @@ services:
       CHATGPT_REDIRECT_URI: http://127.0.0.1:3000/auth/callback
       LLM_REQUEST_TIMEOUT_SECONDS: ${LLM_REQUEST_TIMEOUT_SECONDS:-120}
       LLM_CONFIG_PATH: /data/llm/settings.json
-      LESSON_QUALITY_REVIEW: ${LESSON_QUALITY_REVIEW:-true}
-      LESSON_QUALITY_MAX_ATTEMPTS: ${LESSON_QUALITY_MAX_ATTEMPTS:-2}
       COOKIE_SECURE: "false"
       CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000"]'
       STT_BASE_URL: http://gateway:9000
